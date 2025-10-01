@@ -62,7 +62,7 @@ public class Transaction {
     @PrePersist
     private void computeTotalAmount() {
         if (price == null || quantity == null) {
-            throw new IllegalStateException("Price and quantity must be set (directly or via Order) before persisting a Transaction");
+            throw new IllegalStateException("Price and quantity must be set before persisting a Transaction");
         }
         this.totalAmount = price * quantity;
     }
