@@ -12,7 +12,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_order_user_timestamp", columnList = "user_id, timestamp"),
+        @Index(name = "idx_order_symbol_timestamp", columnList = "symbol, timestamp"),
+        @Index(name = "idx_order_user_symbol", columnList = "user_id, symbol")
+})
 @Getter @Setter
 @EntityListeners(AuditingEntityListener.class)
 public class Order {

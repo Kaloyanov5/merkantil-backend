@@ -13,7 +13,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "transactions")
+@Table(name = "transactions", indexes = {
+        @Index(name = "idx_tx_user_timestamp", columnList = "user_id, timestamp"),
+        @Index(name = "idx_tx_symbol_timestamp", columnList = "stock_symbol, timestamp"),
+        @Index(name = "idx_tx_user_symbol", columnList = "user_id, stock_symbol")
+})
 @Getter @Setter
 @EntityListeners(AuditingEntityListener.class)
 public class Transaction {

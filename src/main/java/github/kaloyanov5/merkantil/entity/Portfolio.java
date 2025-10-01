@@ -8,7 +8,12 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "portfolios")
+@Table(name = "portfolios", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_portfolio_user_symbol", columnNames = {"user_id", "symbol"})
+}, indexes = {
+        @Index(name = "idx_portfolio_user", columnList = "user_id"),
+        @Index(name = "idx_portfolio_user_symbol", columnList = "user_id, symbol")
+})
 @Getter @Setter
 public class Portfolio {
     @Id
