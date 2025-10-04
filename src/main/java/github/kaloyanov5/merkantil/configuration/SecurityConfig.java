@@ -2,7 +2,6 @@ package github.kaloyanov5.merkantil.configuration;
 
 import github.kaloyanov5.merkantil.security.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,14 +19,22 @@ import org.springframework.session.data.redis.config.annotation.web.http.EnableR
 @Configuration
 @EnableWebSecurity
 @EnableRedisHttpSession(maxInactiveIntervalInSeconds = 1800) // 30 minutes
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Autowired
-    private CustomUserDetailsService userDetailsService;
+    private final CustomUserDetailsService userDetailsService;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
+    }
+
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder());
+        return provider;
     }
 
     @Bean
@@ -51,7 +58,7 @@ public class SecurityConfig {
                         .maximumSessions(3)
                         .maxSessionsPreventsLogin(false)
                 )
-                .userDetailsService(userDetailsService)
+                .authenticationProvider(authenticationProvider())
                 .build();
     }
 }
