@@ -34,6 +34,7 @@ public class User {
     @NotBlank(message = "Please provide a password")
     @Size(min = 8, message = "Password must include 8 or more characters")
     @Column(nullable = false)
+    @JsonIgnore
     private String password;
 
     @Column(nullable = false)
