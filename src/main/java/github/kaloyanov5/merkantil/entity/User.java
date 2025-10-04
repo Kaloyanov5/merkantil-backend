@@ -36,7 +36,8 @@ public class User {
     @Column(nullable = false)
     private String password;
 
-    // balance
+    @Column(nullable = false)
+    private Double balance = 0.0;
 
     @CreatedDate
     @Column(nullable = false, updatable = false, name = "created_at")
