@@ -7,6 +7,7 @@ import github.kaloyanov5.merkantil.request.RegisterRequest;
 import github.kaloyanov5.merkantil.request.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,9 +35,11 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest,
+                                   HttpServletResponse httpResponse
+    ) {
         try {
-            AuthResponse response = authService.login(request);
+            AuthResponse response = authService.login(request, httpRequest, httpResponse);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)

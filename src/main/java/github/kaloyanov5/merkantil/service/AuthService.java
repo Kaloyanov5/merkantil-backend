@@ -7,62 +7,59 @@ import github.kaloyanov5.merkantil.request.LoginRequest;
 import github.kaloyanov5.merkantil.request.RegisterRequest;
 import github.kaloyanov5.merkantil.request.UserResponse;
 import github.kaloyanov5.merkantil.security.CustomUserDetails;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class AuthService {
 
-    @Autowired
-    private UserRepository userRepository;
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-    @Autowired
-    private AuthenticationManager authenticationManager;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final AuthenticationManager authenticationManager;
+    private final SecurityContextRepository securityContextRepository;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Username already exists");
         }
-
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new IllegalArgumentException("Email already exists");
         }
-
         User user = new User();
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setBalance(10000.0); // Initial balance
-
+        user.setBalance(10000.0);
         User savedUser = userRepository.save(user);
-
-        UserResponse userResponse = mapToUserResponse(savedUser);
-        return new AuthResponse("User registered successfully", userResponse);
+        return new AuthResponse("User registered successfully", mapToUserResponse(savedUser));
     }
 
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getUsername(),
-                        request.getPassword()
-                )
+                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
         );
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, httpRequest, httpResponse);
 
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        User user = userDetails.getUser();
-
-        UserResponse userResponse = mapToUserResponse(user);
-        return new AuthResponse("User logged in successfully", userResponse);
+        CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+        return new AuthResponse("User logged in successfully", mapToUserResponse(user));
     }
 
     public void logout() {
@@ -71,19 +68,14 @@ public class AuthService {
 
     public User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof CustomUserDetails userDetails) {
-            return userDetails.getUser();
+        if (authentication != null && authentication.getPrincipal() instanceof CustomUserDetails principal) {
+            return userRepository.findById(principal.getId())
+                    .orElseThrow(() -> new IllegalStateException("User not found"));
         }
         throw new IllegalStateException("User not authenticated");
     }
 
     private UserResponse mapToUserResponse(User user) {
-        return new UserResponse(
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                user.getBalance(),
-                user.getCreatedAt()
-        );
+        return new UserResponse(user.getId(), user.getUsername(), user.getEmail(), user.getBalance(), user.getCreatedAt());
     }
 }

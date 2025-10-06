@@ -18,6 +18,7 @@ public class SessionConfig {
         serializer.setUseBase64Encoding(false); // disabled base64 encoding for cookies
         serializer.setUseHttpOnlyCookie(true);
         serializer.setSameSite("Lax");
+        serializer.setCookieMaxAge(1800);
         return serializer;
     }
 }
