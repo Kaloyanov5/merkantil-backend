@@ -1,9 +1,7 @@
 package github.kaloyanov5.merkantil.security;
 
 import github.kaloyanov5.merkantil.entity.User;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
