@@ -20,13 +20,15 @@ public class CustomUserDetails implements UserDetails, Serializable {
     private final Long id;
     private final String username;
     private final String password;
+    private final String role;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    private CustomUserDetails(Long id, String username, String password,
+    private CustomUserDetails(Long id, String username, String password, String role,
                               Collection<? extends GrantedAuthority> authorities) {
         this.id = id;
         this.username = username;
         this.password = password;
+        this.role = role;
         this.authorities = authorities;
     }
 
@@ -35,8 +37,8 @@ public class CustomUserDetails implements UserDetails, Serializable {
                 user.getId(),
                 user.getUsername(),
                 user.getPassword(),
-                List.of(new SimpleGrantedAuthority("ROLE_USER"))
-        );
+                user.getRole().name(),
+                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
     }
 
     @Override public boolean isAccountNonExpired() { return true; }

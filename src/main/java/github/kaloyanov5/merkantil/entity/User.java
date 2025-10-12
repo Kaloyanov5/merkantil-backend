@@ -41,6 +41,10 @@ public class User {
     @Column(nullable = false)
     private Double balance = 0.0;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role = Role.USER;
+
     @CreatedDate
     @Column(nullable = false, updatable = false, name = "created_at")
     private LocalDateTime createdAt;
