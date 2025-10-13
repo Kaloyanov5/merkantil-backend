@@ -61,7 +61,7 @@ public class SecurityConfig {
                         .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.ALWAYS)
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 )
                 .authenticationProvider(authenticationProvider())
                 .build();
