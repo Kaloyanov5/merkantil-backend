@@ -1,10 +1,10 @@
 package github.kaloyanov5.merkantil.controller;
 
 import github.kaloyanov5.merkantil.entity.User;
-import github.kaloyanov5.merkantil.request.AuthResponse;
-import github.kaloyanov5.merkantil.request.LoginRequest;
-import github.kaloyanov5.merkantil.request.RegisterRequest;
-import github.kaloyanov5.merkantil.request.UserResponse;
+import github.kaloyanov5.merkantil.dto.AuthResponse;
+import github.kaloyanov5.merkantil.dto.LoginRequest;
+import github.kaloyanov5.merkantil.dto.RegisterRequest;
+import github.kaloyanov5.merkantil.dto.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

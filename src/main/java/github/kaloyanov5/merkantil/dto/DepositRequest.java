@@ -1,4 +1,4 @@
-package github.kaloyanov5.merkantil.request;
+package github.kaloyanov5.merkantil.dto;
 
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
