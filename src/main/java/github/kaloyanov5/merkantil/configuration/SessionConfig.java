@@ -7,7 +7,7 @@ import org.springframework.session.web.http.CookieSerializer;
 import org.springframework.session.web.http.DefaultCookieSerializer;
 
 @Configuration
-@EnableRedisHttpSession(maxInactiveIntervalInSeconds = 1800, redisNamespace = "merkantil:session")
+@EnableRedisHttpSession(maxInactiveIntervalInSeconds = 86400, redisNamespace = "merkantil:session")
 public class SessionConfig {
 
     @Bean
@@ -18,7 +18,7 @@ public class SessionConfig {
         serializer.setUseBase64Encoding(false); // disabled base64 encoding for cookies
         serializer.setUseHttpOnlyCookie(true);
         serializer.setSameSite("Lax");
-        serializer.setCookieMaxAge(1800);
+        serializer.setCookieMaxAge(86400);
         return serializer;
     }
 }

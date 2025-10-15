@@ -175,8 +175,8 @@ public class StockController {
             if (symbols == null || symbols.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Symbols list is required"));
             }
-            if (symbols.size() > 50) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Maximum 50 symbols allowed"));
+            if (symbols.size() > 30) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Maximum 30 symbols allowed"));
             }
 
             List<StockQuoteResponse> quotes = stockService.getMultipleQuotes(symbols);
