@@ -1,4 +1,4 @@
-package github.kaloyanov5.merkantil.dto;
+package github.kaloyanov5.merkantil.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
