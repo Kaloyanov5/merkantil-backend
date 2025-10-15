@@ -2,8 +2,8 @@ package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.entity.User;
 import github.kaloyanov5.merkantil.repository.UserRepository;
-import github.kaloyanov5.merkantil.dto.BalanceResponse;
-import github.kaloyanov5.merkantil.dto.UserResponse;
+import github.kaloyanov5.merkantil.dto.response.BalanceResponse;
+import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;

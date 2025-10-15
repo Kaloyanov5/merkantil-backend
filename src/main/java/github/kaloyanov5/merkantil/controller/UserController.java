@@ -1,9 +1,9 @@
 package github.kaloyanov5.merkantil.controller;
 
 import github.kaloyanov5.merkantil.entity.User;
-import github.kaloyanov5.merkantil.dto.BalanceResponse;
-import github.kaloyanov5.merkantil.dto.DepositRequest;
-import github.kaloyanov5.merkantil.dto.UserResponse;
+import github.kaloyanov5.merkantil.dto.response.BalanceResponse;
+import github.kaloyanov5.merkantil.dto.request.DepositRequest;
+import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
 import github.kaloyanov5.merkantil.service.UserService;
 import jakarta.validation.Valid;
