@@ -51,6 +51,7 @@ public class StockService {
 
     /**
      * Get stock by symbol
+     * TODO: replace caching with database price access
      */
     @Cacheable(value = "stocks", key = "#symbol")
     @Transactional
