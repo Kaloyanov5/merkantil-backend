@@ -196,7 +196,7 @@ public class AlpacaApiService {
         try {
             return tradingClient.get()
                     .uri(uriBuilder -> uriBuilder
-                            .path("/v2/assets/{symbol}")
+                            .path("/assets/{symbol}")
                             .build(symbol.toUpperCase()))
                     .header("APCA-API-KEY-ID", apiKeyId)
                     .header("APCA-API-SECRET-KEY", secretKey)
