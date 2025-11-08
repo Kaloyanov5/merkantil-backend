@@ -95,13 +95,13 @@ public class AlpacaApiService {
      * Get historical bars (OHLCV data)
      */
     @Cacheable(value = "alpacaBars", key = "#symbol + '-' + #startDate + '-' + #endDate")
-    public Map<String, List<AlpacaBar>> getHistoricalBars(String symbol, LocalDate startDate, LocalDate endDate) {
+    public List<AlpacaBar> getHistoricalBars(String symbol, LocalDate startDate, LocalDate endDate) {
         try {
             log.info("Fetching historical bars for {} from {} to {}", symbol, startDate, endDate);
 
             DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE;
 
-            return dataClient.get()
+            AlpacaBarsResponse response = dataClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/v2/stocks/{symbol}/bars")
                             .queryParam("start", startDate.format(formatter))
@@ -112,11 +112,27 @@ public class AlpacaApiService {
                     .header("APCA-API-KEY-ID", apiKeyId)
                     .header("APCA-API-SECRET-KEY", secretKey)
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<Map<String, List<AlpacaBar>>>() {})
+                    .bodyToMono(AlpacaBarsResponse.class)
                     .block();
+
+            if (response == null || response.getBars() == null) {
+                log.warn("No bars response for {}", symbol);
+                return List.of();
+            }
+
+            List<AlpacaBar> bars = response.getBars();
+
+            if (bars.isEmpty()) {
+                log.warn("No bars data for {} in response", symbol);
+                return List.of();
+            }
+
+            log.info("Fetched {} bars for {}", bars.size(), symbol);
+            return bars;
+
         } catch (Exception e) {
-            log.error("Error fetching historical bars for {}: {}", symbol, e.getMessage());
-            return Map.of();
+            log.error("Error fetching historical bars for {}: {}", symbol, e.getMessage(), e);
+            return List.of();
         }
     }
 

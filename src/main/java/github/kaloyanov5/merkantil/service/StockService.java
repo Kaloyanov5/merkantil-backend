@@ -173,11 +173,12 @@ public class StockService {
      * Get stock history from Alpaca
      */
     public List<StockHistoryResponse> getStockHistory(String symbol, LocalDate startDate, LocalDate endDate) {
-        Map<String, List<AlpacaBar>> barsMap = alpacaApiService.getHistoricalBars(
-                symbol.toUpperCase(), startDate, endDate);
+        // fetch from Alpaca (now returns List<AlpacaBar> directly)
+        List<AlpacaBar> bars =
+                alpacaApiService.getHistoricalBars(symbol.toUpperCase(), startDate, endDate);
 
-        if (barsMap == null || !barsMap.containsKey("bars")) {
-            // Fallback to database
+        if (bars == null || bars.isEmpty()) {
+            // fallback to database
             return stockPriceHistoryRepository
                     .findBySymbolAndDateBetweenOrderByDateAsc(symbol.toUpperCase(), startDate, endDate)
                     .stream()
@@ -185,7 +186,7 @@ public class StockService {
                     .collect(Collectors.toList());
         }
 
-        return barsMap.get("bars").stream()
+        return bars.stream()
                 .map(bar -> new StockHistoryResponse(
                         LocalDate.parse(bar.getTimestamp().substring(0, 10)),
                         bar.getOpen(),
