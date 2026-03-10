@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -28,6 +29,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     // date range queries
     List<Transaction> findByUserIdAndTimestampBetween(Long userId, LocalDateTime start, LocalDateTime end);
+
+    // Portfolio reconstruction: get all transactions up to a specific date (inclusive)
+    @Query("SELECT t FROM Transaction t WHERE t.user.id = :userId " +
+            "AND DATE(t.timestamp) <= :date " +
+            "ORDER BY t.timestamp ASC")
+    List<Transaction> findByUserIdAndDateBeforeOrEqual(@Param("userId") Long userId, @Param("date") LocalDate date);
+
+    // Get distinct symbols traded by user up to a specific date
+    @Query("SELECT DISTINCT t.stockSymbol FROM Transaction t WHERE t.user.id = :userId " +
+            "AND DATE(t.timestamp) <= :date")
+    List<String> findDistinctSymbolsByUserIdUpToDate(@Param("userId") Long userId, @Param("date") LocalDate date);
 
     // pagination
     Page<Transaction> findByUserId(Long userId, Pageable pageable);
