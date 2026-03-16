@@ -1,18 +1,18 @@
 package github.kaloyanov5.merkantil.controller;
 
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaBar;
+import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
 import github.kaloyanov5.merkantil.repository.StockRepository;
+import github.kaloyanov5.merkantil.service.MassiveApiService;
 import github.kaloyanov5.merkantil.service.StockImportService;
 import github.kaloyanov5.merkantil.service.StockPriceScheduler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import github.kaloyanov5.merkantil.service.AlpacaApiService;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -26,17 +26,17 @@ public class StockImportController {
     private final StockImportService stockImportService;
     private final StockPriceScheduler stockPriceScheduler;
     private final StockRepository stockRepository;
-    private final AlpacaApiService alpacaApiService;
+    private final MassiveApiService massiveApiService;
 
     /**
-     * Import ALL tradable stocks from Alpaca
+     * Import ALL tradable stocks from Massive
      * WARNING: This may take several minutes and use many API calls
      * POST /api/admin/stocks/import/all
      */
     @PostMapping("/all")
     public ResponseEntity<?> importAllStocks() {
         try {
-            StockImportService.ImportResult result = stockImportService.importStocksFromAlpaca();
+            StockImportService.ImportResult result = stockImportService.importStocksFromMassive();
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
@@ -92,6 +92,56 @@ public class StockImportController {
     }
 
     /**
+     * Import multiple specific stocks by list of symbols
+     * POST /api/admin/stocks/import/multiple
+     * Body: { "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN"] }
+     */
+    @PostMapping("/multiple")
+    public ResponseEntity<?> importMultipleStocks(@RequestBody Map<String, List<String>> request) {
+        try {
+            List<String> symbols = request.get("symbols");
+            if (symbols == null || symbols.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "symbols array is required and cannot be empty"));
+            }
+
+            if (symbols.size() > 100) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Maximum 100 stocks can be imported at once"));
+            }
+
+            int imported = 0;
+            int failed = 0;
+            List<String> failedSymbols = new ArrayList<>();
+
+            for (String symbol : symbols) {
+                try {
+                    if (stockImportService.importSingleStock(symbol.toUpperCase())) {
+                        imported++;
+                    } else {
+                        failed++;
+                        failedSymbols.add(symbol);
+                    }
+                } catch (Exception e) {
+                    failed++;
+                    failedSymbols.add(symbol + " (" + e.getMessage() + ")");
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Import completed",
+                    "total", symbols.size(),
+                    "imported", imported,
+                    "failed", failed,
+                    "failedSymbols", failedSymbols
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Import failed: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Manually trigger price update (useful for testing)
      * POST /api/admin/stocks/import/update-prices
      */
@@ -113,9 +163,9 @@ public class StockImportController {
     @PostMapping("/backfill")
     public ResponseEntity<?> backfillHistory(
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
-            java.time.LocalDate startDate,
+            LocalDate startDate,
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
-            java.time.LocalDate endDate
+            LocalDate endDate
     ) {
         try {
             if (startDate.isAfter(endDate)) {
@@ -123,7 +173,7 @@ public class StockImportController {
                         .body(Map.of("error", "Start date must be before end date"));
             }
 
-            if (startDate.isBefore(java.time.LocalDate.now().minusYears(5))) {
+            if (startDate.isBefore(LocalDate.now().minusYears(5))) {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "Start date cannot be more than 5 years ago"));
             }
@@ -153,8 +203,8 @@ public class StockImportController {
                         .body(Map.of("error", "symbol, startDate, and endDate are required"));
             }
 
-            java.time.LocalDate startDate = java.time.LocalDate.parse(startDateStr);
-            java.time.LocalDate endDate = java.time.LocalDate.parse(endDateStr);
+            LocalDate startDate = LocalDate.parse(startDateStr);
+            LocalDate endDate = LocalDate.parse(endDateStr);
 
             int records = stockPriceScheduler.backfillStockHistory(symbol, startDate, endDate);
 
@@ -169,22 +219,21 @@ public class StockImportController {
     }
 
     /**
-     * Test endpoint to see raw Alpaca bars response
+     * Test endpoint to see raw Massive bars response
      * GET /api/admin/stocks/import/test-bars?symbol=AAPL&startDate=2024-10-20&endDate=2024-10-26
      */
     @GetMapping("/test-bars")
     public ResponseEntity<?> testBars(
             @RequestParam String symbol,
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
-            java.time.LocalDate startDate,
+            LocalDate startDate,
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
-            java.time.LocalDate endDate
+            LocalDate endDate
     ) {
         try {
             log.info("Testing bars API for {} from {} to {}", symbol, startDate, endDate);
 
-            // Call Alpaca API and return raw response
-            List<AlpacaBar> result = alpacaApiService.getHistoricalBars(symbol, startDate, endDate);
+            List<MassiveBar> result = massiveApiService.getHistoricalBars(symbol, startDate, endDate);
 
             return ResponseEntity.ok(Map.of(
                     "success", result != null && !result.isEmpty(),
