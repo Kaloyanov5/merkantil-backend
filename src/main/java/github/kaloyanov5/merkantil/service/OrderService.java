@@ -1,6 +1,6 @@
 package github.kaloyanov5.merkantil.service;
 
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaSnapshot;
+import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.dto.request.OrderRequest;
 import github.kaloyanov5.merkantil.dto.response.OrderResponse;
 import github.kaloyanov5.merkantil.entity.*;
@@ -24,7 +24,7 @@ public class OrderService {
     private final PortfolioRepository portfolioRepository;
     private final StockRepository stockRepository;
     private final UserRepository userRepository;
-    private final AlpacaApiService alpacaApiService;
+    private final MassiveApiService massiveApiService;
 
     /**
      * Place a new order (BUY or SELL)
@@ -201,12 +201,12 @@ public class OrderService {
         OrderType orderType = OrderType.valueOf(request.getOrderType().toUpperCase());
 
         if (orderType == OrderType.MARKET) {
-            // Get current market price from Alpaca
-            AlpacaSnapshot snapshot = alpacaApiService.getSnapshot(stock.getSymbol());
-            if (snapshot == null || snapshot.getLatestTrade() == null) {
+            // Get current market price from Massive
+            MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
+            if (snapshot == null || snapshot.getLastTrade() == null) {
                 throw new IllegalStateException("Unable to fetch current price for " + stock.getSymbol());
             }
-            return snapshot.getLatestTrade().getPrice();
+            return snapshot.getLastTrade().getPrice();
         } else {
             // LIMIT order - use specified limit price
             if (request.getLimitPrice() == null || request.getLimitPrice() <= 0) {

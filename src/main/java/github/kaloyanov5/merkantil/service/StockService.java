@@ -1,7 +1,7 @@
 package github.kaloyanov5.merkantil.service;
 
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaBar;
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaSnapshot;
+import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
+import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.dto.response.StockHistoryResponse;
 import github.kaloyanov5.merkantil.dto.response.StockQuoteResponse;
 import github.kaloyanov5.merkantil.dto.response.StockResponse;
@@ -33,7 +33,7 @@ public class StockService {
 
     private final StockRepository stockRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
-    private final AlpacaApiService alpacaApiService;
+    private final MassiveApiService massiveApiService;
 
     /**
      * Get all stocks with pagination
@@ -59,28 +59,38 @@ public class StockService {
         Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
                 .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + symbol));
 
-        // Update price from Alpaca if stale (older than 5 minutes)
+        // Update price from Massive if stale (older than 5 minutes)
         if (stock.getLastUpdated() == null ||
                 stock.getLastUpdated().isBefore(LocalDateTime.now().minusMinutes(5))) {
-            updateStockPriceFromAlpaca(stock);
+            updateStockPriceFromMassive(stock);
         }
 
         return mapToStockResponse(stock);
     }
 
     /**
-     * Get real-time quote from Alpaca
+     * Get real-time quote from Massive
      */
     public StockQuoteResponse getQuote(String symbol) {
-        AlpacaSnapshot snapshot = alpacaApiService.getSnapshot(symbol.toUpperCase());
+        MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(symbol.toUpperCase());
 
-        if (snapshot == null || snapshot.getLatestTrade() == null) {
+        if (snapshot == null) {
             throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
         }
 
-        Double currentPrice = snapshot.getLatestTrade().getPrice();
-        Double previousClose = snapshot.getPrevDailyBar() != null
-                ? snapshot.getPrevDailyBar().getClose()
+        // lastTrade may be null outside trading hours — fall back to day close price
+        Double currentPrice = null;
+        if (snapshot.getLastTrade() != null) {
+            currentPrice = snapshot.getLastTrade().getPrice();
+        } else if (snapshot.getDay() != null) {
+            currentPrice = snapshot.getDay().getClose();
+        }
+
+        if (currentPrice == null) {
+            throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
+        }
+        Double previousClose = snapshot.getPrevDay() != null
+                ? snapshot.getPrevDay().getClose()
                 : null;
 
         Double change = null;
@@ -102,11 +112,11 @@ public class StockService {
                 currentPrice,
                 change,
                 changePercent,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getHigh() : null,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getLow() : null,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getOpen() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getHigh() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getLow() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getOpen() : null,
                 previousClose,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getVolume() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getVolume() : null,
                 LocalDateTime.now()
         );
     }
@@ -170,12 +180,11 @@ public class StockService {
     }
 
     /**
-     * Get stock history from Alpaca
+     * Get stock history from Massive
      */
     public List<StockHistoryResponse> getStockHistory(String symbol, LocalDate startDate, LocalDate endDate) {
-        // fetch from Alpaca (now returns List<AlpacaBar> directly)
-        List<AlpacaBar> bars =
-                alpacaApiService.getHistoricalBars(symbol.toUpperCase(), startDate, endDate);
+        List<MassiveBar> bars =
+                massiveApiService.getHistoricalBars(symbol.toUpperCase(), startDate, endDate);
 
         if (bars == null || bars.isEmpty()) {
             // fallback to database
@@ -188,7 +197,7 @@ public class StockService {
 
         return bars.stream()
                 .map(bar -> new StockHistoryResponse(
-                        LocalDate.parse(bar.getTimestamp().substring(0, 10)),
+                        MassiveApiService.millisToLocalDate(bar.getTimestamp()),
                         bar.getOpen(),
                         bar.getHigh(),
                         bar.getLow(),
@@ -199,10 +208,10 @@ public class StockService {
     }
 
     /**
-     * Get multiple quotes at once from Alpaca
+     * Get multiple quotes at once from Massive
      */
     public List<StockQuoteResponse> getMultipleQuotes(List<String> symbols) {
-        Map<String, AlpacaSnapshot> snapshots = alpacaApiService.getMultipleSnapshots(
+        Map<String, MassiveSnapshotTicker> snapshots = massiveApiService.getMultipleSnapshots(
                 symbols.stream().map(String::toUpperCase).collect(Collectors.toList()));
 
         return snapshots.entrySet().stream()
@@ -215,48 +224,61 @@ public class StockService {
      * Check if market is open
      */
     public boolean isMarketOpen() {
-        return alpacaApiService.isMarketOpen();
+        return massiveApiService.isMarketOpen();
     }
 
     /**
-     * Update stock price from Alpaca
+     * Update stock price from Massive
      */
     @Transactional
-    protected void updateStockPriceFromAlpaca(Stock stock) {
+    protected void updateStockPriceFromMassive(Stock stock) {
         try {
-            AlpacaSnapshot snapshot = alpacaApiService.getSnapshot(stock.getSymbol());
+            MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
 
-            if (snapshot != null && snapshot.getLatestTrade() != null) {
-                stock.setCurrentPrice(snapshot.getLatestTrade().getPrice());
-
-                if (snapshot.getPrevDailyBar() != null) {
-                    stock.setPreviousClose(snapshot.getPrevDailyBar().getClose());
+            if (snapshot != null && (snapshot.getLastTrade() != null || snapshot.getDay() != null)) {
+                if (snapshot.getLastTrade() != null) {
+                    stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
+                } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null) {
+                    stock.setCurrentPrice(snapshot.getDay().getClose());
                 }
 
-                if (snapshot.getDailyBar() != null) {
-                    stock.setDayHigh(snapshot.getDailyBar().getHigh());
-                    stock.setDayLow(snapshot.getDailyBar().getLow());
-                    stock.setVolume(snapshot.getDailyBar().getVolume());
+                if (snapshot.getPrevDay() != null) {
+                    stock.setPreviousClose(snapshot.getPrevDay().getClose());
+                }
+
+                if (snapshot.getDay() != null) {
+                    stock.setDayHigh(snapshot.getDay().getHigh());
+                    stock.setDayLow(snapshot.getDay().getLow());
+                    stock.setVolume(snapshot.getDay().getVolume() != null ? snapshot.getDay().getVolume().longValue() : null);
                 }
 
                 stock.setLastUpdated(LocalDateTime.now());
                 stockRepository.save(stock);
 
-                log.info("Updated price for {} from Alpaca: ${}", stock.getSymbol(), stock.getCurrentPrice());
+                log.info("Updated price for {} from Massive: ${}", stock.getSymbol(), stock.getCurrentPrice());
             }
         } catch (Exception e) {
-            log.error("Error updating price for {} from Alpaca: {}", stock.getSymbol(), e.getMessage());
+            log.error("Error updating price for {} from Massive: {}", stock.getSymbol(), e.getMessage());
         }
     }
 
-    private StockQuoteResponse convertSnapshotToQuote(String symbol, AlpacaSnapshot snapshot) {
-        if (snapshot == null || snapshot.getLatestTrade() == null) {
+    private StockQuoteResponse convertSnapshotToQuote(String symbol, MassiveSnapshotTicker snapshot) {
+        if (snapshot == null) {
             return null;
         }
 
-        Double currentPrice = snapshot.getLatestTrade().getPrice();
-        Double previousClose = snapshot.getPrevDailyBar() != null
-                ? snapshot.getPrevDailyBar().getClose()
+        Double currentPrice = null;
+        if (snapshot.getLastTrade() != null) {
+            currentPrice = snapshot.getLastTrade().getPrice();
+        } else if (snapshot.getDay() != null) {
+            currentPrice = snapshot.getDay().getClose();
+        }
+
+        if (currentPrice == null) {
+            return null;
+        }
+        Double previousClose = snapshot.getPrevDay() != null
+                ? snapshot.getPrevDay().getClose()
                 : null;
 
         Double change = null;
@@ -275,11 +297,11 @@ public class StockService {
                 currentPrice,
                 change,
                 changePercent,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getHigh() : null,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getLow() : null,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getOpen() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getHigh() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getLow() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getOpen() : null,
                 previousClose,
-                snapshot.getDailyBar() != null ? snapshot.getDailyBar().getVolume() : null,
+                snapshot.getDay() != null ? snapshot.getDay().getVolume() : null,
                 LocalDateTime.now()
         );
     }
