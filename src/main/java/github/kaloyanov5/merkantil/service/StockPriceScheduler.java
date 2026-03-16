@@ -1,7 +1,7 @@
 package github.kaloyanov5.merkantil.service;
 
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaBar;
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaSnapshot;
+import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
+import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.entity.Stock;
 import github.kaloyanov5.merkantil.entity.StockPriceHistory;
 import github.kaloyanov5.merkantil.repository.StockPriceHistoryRepository;
@@ -15,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,21 +27,19 @@ public class StockPriceScheduler {
 
     private final StockRepository stockRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
-    private final AlpacaApiService alpacaApiService;
+    private final MassiveApiService massiveApiService;
 
     private static final int BATCH_SIZE = 10; // Process 10 stocks per API call
 
     /**
      * Update all stock prices every 30 seconds using batch requests
      * With 30 stocks and batch size 10: 3 API calls per update
-     * 3 calls × 2 updates/min = 6 API calls/min (way under 200 limit!)
      */
     @Scheduled(fixedRate = 30000) // 30 seconds = 30000 milliseconds
     @Transactional
-    @CacheEvict(value = {"stocks", "alpacaSnapshots"}, allEntries = true) // Clear all caches
+    @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true) // Clear all caches
     public void updateAllStockPrices() {
-        // Only update during market hours (9:30 AM - 4:00 PM EST)
-        if (!isMarketHours()) {
+        if (!massiveApiService.isMarketOpen()) {
             log.debug("Market is closed, skipping price update");
             return;
         }
@@ -67,11 +64,6 @@ public class StockPriceScheduler {
                 int end = Math.min(i + BATCH_SIZE, allStocks.size());
                 List<Stock> batch = allStocks.subList(i, end);
                 updateStockBatch(batch);
-
-                // Small delay between batches to avoid rate limiting
-                if (i + BATCH_SIZE < allStocks.size()) {
-                    Thread.sleep(100);
-                }
             }
 
             log.info("All stock price updates completed");
@@ -114,12 +106,12 @@ public class StockPriceScheduler {
                     continue;
                 }
 
-                // fetch today's bar from Alpaca
-                List<AlpacaBar> bars =
-                        alpacaApiService.getHistoricalBars(stock.getSymbol(), today, today);
+                // fetch today's bar from Massive
+                List<MassiveBar> bars =
+                        massiveApiService.getHistoricalBars(stock.getSymbol(), today, today);
 
                 if (bars != null && !bars.isEmpty()) {
-                    AlpacaBar bar = bars.getFirst();
+                    MassiveBar bar = bars.getFirst();
 
                     StockPriceHistory history = new StockPriceHistory();
                     history.setSymbol(stock.getSymbol());
@@ -128,7 +120,7 @@ public class StockPriceScheduler {
                     history.setHigh(bar.getHigh());
                     history.setLow(bar.getLow());
                     history.setClose(bar.getClose());
-                    history.setVolume(bar.getVolume());
+                    history.setVolume(bar.getVolume() != null ? bar.getVolume().longValue() : null);
                     history.setCreatedAt(LocalDateTime.now());
 
                     stockPriceHistoryRepository.save(history);
@@ -156,7 +148,7 @@ public class StockPriceScheduler {
     @Scheduled(cron = "0 0 5 * * *") // 5:00 AM EST daily
     @Transactional
     public void backfillHistoricalData() {
-        log.info("Starting intelligent historical data backfill with gap detection...");
+        log.info("Starting historical data backfill with gap detection...");
 
         List<Stock> allStocks = stockRepository.findAll().stream()
                 .filter(s -> s.getIsActive() != null && s.getIsActive())
@@ -187,7 +179,7 @@ public class StockPriceScheduler {
 
     /**
      * Detect gaps in historical data and fill them
-     * This checks for missing dates and backfills them from Alpaca
+     * This checks for missing dates and backfills them from Massive
      */
     @Transactional
     public int detectAndFillGaps(String symbol) {
@@ -240,9 +232,9 @@ public class StockPriceScheduler {
     public int backfillStockHistory(String symbol, LocalDate startDate, LocalDate endDate) {
         log.info("Backfilling history for {} from {} to {}", symbol, startDate, endDate);
 
-        // fetch historical bars from Alpaca (now returns List<AlpacaBar> directly)
-        List<AlpacaBar> bars =
-                alpacaApiService.getHistoricalBars(symbol.toUpperCase(), startDate, endDate);
+        // fetch historical bars from Massive
+        List<MassiveBar> bars =
+                massiveApiService.getHistoricalBars(symbol.toUpperCase(), startDate, endDate);
 
         if (bars == null || bars.isEmpty()) {
             log.warn("No historical data available for {}", symbol);
@@ -251,9 +243,10 @@ public class StockPriceScheduler {
 
         int saved = 0;
 
-        for (AlpacaBar bar : bars) {
+        for (MassiveBar bar : bars) {
             try {
-                LocalDate date = LocalDate.parse(bar.getTimestamp().substring(0, 10));
+                LocalDate date = MassiveApiService.millisToLocalDate(bar.getTimestamp());
+                if (date == null) continue;
 
                 // check if this date already exists
                 Optional<StockPriceHistory> existing = stockPriceHistoryRepository
@@ -271,7 +264,7 @@ public class StockPriceScheduler {
                 history.setHigh(bar.getHigh());
                 history.setLow(bar.getLow());
                 history.setClose(bar.getClose());
-                history.setVolume(bar.getVolume());
+                history.setVolume(bar.getVolume() != null ? bar.getVolume().longValue() : null);
                 history.setCreatedAt(LocalDateTime.now());
 
                 stockPriceHistoryRepository.save(history);
@@ -335,11 +328,11 @@ public class StockPriceScheduler {
             log.debug("Fetching snapshots for symbols: {}", symbols);
 
             // get multiple snapshots in one API call
-            Map<String, AlpacaSnapshot> snapshots = alpacaApiService.getMultipleSnapshots(symbols);
+            Map<String, MassiveSnapshotTicker> snapshots = massiveApiService.getMultipleSnapshots(symbols);
 
             for (Stock stock : stocks) {
-                AlpacaSnapshot snapshot = snapshots.get(stock.getSymbol());
-                if (snapshot != null && snapshot.getLatestTrade() != null) {
+                MassiveSnapshotTicker snapshot = snapshots.get(stock.getSymbol());
+                if (snapshot != null) {
                     updateStockFromSnapshot(stock, snapshot);
                 } else {
                     log.warn("No snapshot data for stock: {}", stock.getSymbol());
@@ -357,31 +350,25 @@ public class StockPriceScheduler {
     /**
      * Update single stock from snapshot
      */
-    private void updateStockFromSnapshot(Stock stock, AlpacaSnapshot snapshot) {
-        stock.setCurrentPrice(snapshot.getLatestTrade().getPrice());
-
-        if (snapshot.getPrevDailyBar() != null) {
-            stock.setPreviousClose(snapshot.getPrevDailyBar().getClose());
+    private void updateStockFromSnapshot(Stock stock, MassiveSnapshotTicker snapshot) {
+        // lastTrade may be null outside trading hours — fall back to day close
+        if (snapshot.getLastTrade() != null) {
+            stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
+        } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null) {
+            stock.setCurrentPrice(snapshot.getDay().getClose());
         }
 
-        if (snapshot.getDailyBar() != null) {
-            stock.setDayHigh(snapshot.getDailyBar().getHigh());
-            stock.setDayLow(snapshot.getDailyBar().getLow());
-            stock.setVolume(snapshot.getDailyBar().getVolume());
+        if (snapshot.getPrevDay() != null) {
+            stock.setPreviousClose(snapshot.getPrevDay().getClose());
+        }
+
+        if (snapshot.getDay() != null) {
+            stock.setDayHigh(snapshot.getDay().getHigh());
+            stock.setDayLow(snapshot.getDay().getLow());
+            stock.setVolume(snapshot.getDay().getVolume() != null ? snapshot.getDay().getVolume().longValue() : null);
         }
 
         stock.setLastUpdated(LocalDateTime.now());
-    }
-
-    /**
-     * Check if market is open (9:30 AM - 4:00 PM EST)
-     */
-    private boolean isMarketHours() {
-        LocalTime now = LocalTime.now();
-        LocalTime marketOpen = LocalTime.of(9, 30);
-        LocalTime marketClose = LocalTime.of(16, 0);
-
-        return now.isAfter(marketOpen) && now.isBefore(marketClose);
     }
 
     /**
@@ -389,7 +376,7 @@ public class StockPriceScheduler {
      * This method can be called directly without waiting for the schedule
      */
     @Transactional
-    @CacheEvict(value = {"stocks", "alpacaSnapshots"}, allEntries = true) // Clear all caches
+    @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true) // Clear all caches
     public void updatePricesNow() {
         log.info("Manual price update triggered");
 

@@ -1,6 +1,6 @@
 package github.kaloyanov5.merkantil.service;
 
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaAsset;
+import github.kaloyanov5.merkantil.dto.massive.MassiveTickerDetail;
 import github.kaloyanov5.merkantil.entity.Stock;
 import github.kaloyanov5.merkantil.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,22 +16,21 @@ import java.util.List;
 @Slf4j
 public class StockImportService {
 
-    private final AlpacaApiService alpacaApiService;
+    private final MassiveApiService massiveApiService;
     private final StockRepository stockRepository;
 
     /**
-     * Import all tradable stocks from Alpaca
+     * Import all tradable stocks from Massive
      * This will fetch all active US equities and save them to database
      */
-    @Transactional
-    public ImportResult importStocksFromAlpaca() {
-        log.info("Starting stock import from Alpaca...");
+    public ImportResult importStocksFromMassive() {
+        log.info("Starting stock import from Massive...");
 
-        List<AlpacaAsset> assets = alpacaApiService.getAssets();
+        List<MassiveTickerDetail> assets = massiveApiService.getAssets();
 
         if (assets == null || assets.isEmpty()) {
-            log.error("No assets returned from Alpaca API");
-            return new ImportResult(0, 0, 0, "Failed to fetch assets from Alpaca");
+            log.error("No assets returned from Massive API");
+            return new ImportResult(0, 0, 0, "Failed to fetch assets from Massive");
         }
 
         int totalAssets = assets.size();
@@ -39,10 +38,12 @@ public class StockImportService {
         int updated = 0;
         int skipped = 0;
 
-        for (AlpacaAsset asset : assets) {
+        for (MassiveTickerDetail asset : assets) {
             try {
-                // Only import tradable stocks
-                if (asset.getTradable() != null && asset.getTradable()) {
+                // Only import active stocks with valid data
+                if (asset.getActive() != null && asset.getActive()
+                        && asset.getTicker() != null && !asset.getTicker().isBlank()
+                        && asset.getName() != null && !asset.getName().isBlank()) {
                     boolean isNew = importStock(asset);
                     if (isNew) {
                         imported++;
@@ -53,7 +54,7 @@ public class StockImportService {
                     skipped++;
                 }
             } catch (Exception e) {
-                log.error("Error importing stock {}: {}", asset.getSymbol(), e.getMessage());
+                log.error("Error importing stock {}: {}", asset.getTicker(), e.getMessage());
                 skipped++;
             }
         }
@@ -70,7 +71,6 @@ public class StockImportService {
     /**
      * Import top N most popular stocks
      */
-    @Transactional
     public ImportResult importTopStocks(int limit) {
         log.info("Importing top {} stocks from predefined list...", limit);
 
@@ -83,7 +83,7 @@ public class StockImportService {
                 "TSLA",  // Tesla
                 "NVDA",  // NVIDIA
                 "META",  // Meta (Facebook)
-                "INTC" // Intel
+                "INTC"   // Intel
         };
 
         int count = 0;
@@ -94,13 +94,13 @@ public class StockImportService {
             if (count >= limit) break;
 
             try {
-                AlpacaAsset asset = alpacaApiService.getAsset(symbol);
-                if (asset != null && asset.getTradable()) {
+                MassiveTickerDetail asset = massiveApiService.getAsset(symbol);
+                if (asset != null && Boolean.TRUE.equals(asset.getActive())) {
                     importStock(asset);
                     imported++;
                     count++;
                 } else {
-                    log.warn("Stock {} not tradable or not found", symbol);
+                    log.warn("Stock {} not active or not found", symbol);
                     failed++;
                 }
             } catch (Exception e) {
@@ -117,18 +117,17 @@ public class StockImportService {
     /**
      * Import a single stock by symbol
      */
-    @Transactional
     public boolean importSingleStock(String symbol) {
         log.info("Importing stock: {}", symbol);
 
-        AlpacaAsset asset = alpacaApiService.getAsset(symbol.toUpperCase());
+        MassiveTickerDetail asset = massiveApiService.getAsset(symbol.toUpperCase());
         if (asset == null) {
             log.error("Stock not found: {}", symbol);
             return false;
         }
 
-        if (asset.getTradable() == null || !asset.getTradable()) {
-            log.error("Stock {} is not tradable", symbol);
+        if (asset.getActive() == null || !asset.getActive()) {
+            log.error("Stock {} is not active", symbol);
             return false;
         }
 
@@ -138,22 +137,37 @@ public class StockImportService {
     }
 
     /**
-     * Import or update a stock from Alpaca asset
+     * Import or update a stock from Massive ticker detail
      */
-    private boolean importStock(AlpacaAsset asset) {
-        Stock stock = stockRepository.findBySymbol(asset.getSymbol())
+    @Transactional
+    public boolean importStock(MassiveTickerDetail asset) {
+        if (asset.getTicker() == null || asset.getTicker().isBlank()
+                || asset.getName() == null || asset.getName().isBlank()) {
+            log.debug("Skipping stock with missing ticker or name: {}", asset.getTicker());
+            return false;
+        }
+
+        Stock stock = stockRepository.findBySymbol(asset.getTicker())
                 .orElse(new Stock());
 
         boolean isNew = stock.getId() == null;
 
-        stock.setSymbol(asset.getSymbol());
+        stock.setSymbol(asset.getTicker());
         stock.setName(asset.getName());
-        stock.setExchange(asset.getExchange());
-        stock.setCurrency("USD"); // Alpaca only supports USD
+        stock.setExchange(MassiveApiService.mapExchangeCode(asset.getPrimaryExchange()));
+        stock.setCurrency(asset.getCurrencyName() != null ? asset.getCurrencyName().toUpperCase() : "USD");
 
-        // Extract sector/industry if available
+        // Use SIC description as sector if available
         if (stock.getSector() == null) {
-            stock.setSector(guessSector(asset.getSymbol())); // Basic guess
+            if (asset.getSicDescription() != null) {
+                stock.setSector(asset.getSicDescription());
+            } else {
+                stock.setSector(guessSector(asset.getTicker()));
+            }
+        }
+
+        if (asset.getMarketCap() != null) {
+            stock.setMarketCap(asset.getMarketCap());
         }
 
         stock.setIsActive(true);

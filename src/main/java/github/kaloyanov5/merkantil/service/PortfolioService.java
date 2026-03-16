@@ -1,6 +1,6 @@
 package github.kaloyanov5.merkantil.service;
 
-import github.kaloyanov5.merkantil.dto.alpaca.AlpacaSnapshot;
+import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.dto.response.PortfolioResponse;
 import github.kaloyanov5.merkantil.entity.Portfolio;
 import github.kaloyanov5.merkantil.entity.Stock;
@@ -20,7 +20,7 @@ public class PortfolioService {
 
     private final PortfolioRepository portfolioRepository;
     private final StockRepository stockRepository;
-    private final AlpacaApiService alpacaApiService;
+    private final MassiveApiService massiveApiService;
 
     /**
      * Get user's portfolio with current values
@@ -83,10 +83,10 @@ public class PortfolioService {
             return stock.getCurrentPrice();
         }
 
-        // Fallback to Alpaca API
-        AlpacaSnapshot snapshot = alpacaApiService.getSnapshot(symbol);
-        if (snapshot != null && snapshot.getLatestTrade() != null) {
-            return snapshot.getLatestTrade().getPrice();
+        // Fallback to Massive API
+        MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(symbol);
+        if (snapshot != null && snapshot.getLastTrade() != null) {
+            return snapshot.getLastTrade().getPrice();
         }
 
         // Last resort: use average buy price (not accurate but prevents errors)
