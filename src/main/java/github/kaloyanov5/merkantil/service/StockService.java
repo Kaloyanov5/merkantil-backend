@@ -228,6 +228,13 @@ public class StockService {
     }
 
     /**
+     * Get detailed market status (OPEN, PRE_MARKET, AFTER_HOURS, CLOSED)
+     */
+    public Map<String, String> getMarketStatus() {
+        return massiveApiService.getDetailedMarketStatus();
+    }
+
+    /**
      * Update stock price from Massive
      */
     @Transactional

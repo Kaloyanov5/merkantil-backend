@@ -46,7 +46,6 @@ public class MassiveApiService {
      * Get real-time snapshot for a single stock.
      * GET /v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}
      */
-    @Cacheable(value = "stockSnapshots", key = "#symbol", unless = "#result == null")
     public MassiveSnapshotTicker getSnapshot(String symbol) {
         try {
             log.info("Fetching snapshot for: {}", symbol);
@@ -346,6 +345,54 @@ public class MassiveApiService {
         } catch (Exception e) {
             log.error("Error checking market status: {}", e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Get detailed market status: OPEN, PRE_MARKET, AFTER_HOURS, or CLOSED.
+     */
+    public Map<String, String> getDetailedMarketStatus() {
+        try {
+            MassiveMarketStatusResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1/marketstatus/now")
+                            .queryParam("apiKey", apiKey)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(MassiveMarketStatusResponse.class)
+                    .block();
+
+            if (response == null) {
+                return Map.of("status", "CLOSED");
+            }
+
+            String status;
+
+            // Check if main exchanges are open
+            boolean exchangesOpen = false;
+            if (response.getExchanges() != null) {
+                String nyse = response.getExchanges().get("nyse");
+                String nasdaq = response.getExchanges().get("nasdaq");
+                exchangesOpen = "open".equalsIgnoreCase(nyse) || "open".equalsIgnoreCase(nasdaq);
+            }
+
+            if (exchangesOpen || "open".equalsIgnoreCase(response.getMarket())) {
+                status = "OPEN";
+            } else if (response.getEarlyHours() != null && response.getEarlyHours()) {
+                status = "PRE_MARKET";
+            } else if (response.getAfterHours() != null && response.getAfterHours()) {
+                status = "AFTER_HOURS";
+            } else {
+                status = "CLOSED";
+            }
+
+            return Map.of(
+                    "status", status,
+                    "serverTime", response.getServerTime() != null ? response.getServerTime() : ""
+            );
+        } catch (Exception e) {
+            log.error("Error checking detailed market status: {}", e.getMessage());
+            return Map.of("status", "CLOSED");
         }
     }
 

@@ -37,6 +37,16 @@ public class StockController {
     }
 
     /**
+     * Get market status
+     * GET /api/stocks/market-status
+     */
+    @GetMapping("/market-status")
+    public ResponseEntity<Map<String, String>> getMarketStatus() {
+        Map<String, String> status = stockService.getMarketStatus();
+        return ResponseEntity.ok(status);
+    }
+
+    /**
      * Get stock by symbol
      * GET /api/stocks/AAPL
      */
