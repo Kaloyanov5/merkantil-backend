@@ -204,7 +204,7 @@ public class OrderService {
             // Get current market price from Massive
             MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
             if (snapshot == null || snapshot.getLastTrade() == null) {
-                throw new IllegalStateException("Unable to fetch current price for " + stock.getSymbol());
+                throw new IllegalArgumentException("Market is currently closed. Trading is only available during market hours.");
             }
             return snapshot.getLastTrade().getPrice();
         } else {

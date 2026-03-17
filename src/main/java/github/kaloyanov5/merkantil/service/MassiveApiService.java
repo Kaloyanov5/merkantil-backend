@@ -136,7 +136,6 @@ public class MassiveApiService {
      * Get historical bars (OHLCV data).
      * GET /v2/aggs/ticker/{ticker}/range/1/day/{from}/{to}
      */
-    @Cacheable(value = "stockBars", key = "#symbol + '-' + #startDate + '-' + #endDate")
     public List<MassiveBar> getHistoricalBars(String symbol, LocalDate startDate, LocalDate endDate) {
         try {
             log.info("Fetching historical bars for {} from {} to {}", symbol, startDate, endDate);
@@ -159,22 +158,22 @@ public class MassiveApiService {
 
             if (response == null || response.getResults() == null) {
                 log.warn("No bars response for {}", symbol);
-                return List.of();
+                return new ArrayList<>();
             }
 
             List<MassiveBar> bars = response.getResults();
 
             if (bars.isEmpty()) {
                 log.warn("No bars data for {} in response", symbol);
-                return List.of();
+                return new ArrayList<>();
             }
 
             log.info("Fetched {} bars for {}", bars.size(), symbol);
-            return bars;
+            return new ArrayList<>(bars);
 
         } catch (Exception e) {
             log.error("Error fetching historical bars for {}: {}", symbol, e.getMessage(), e);
-            return List.of();
+            return new ArrayList<>();
         }
     }
 

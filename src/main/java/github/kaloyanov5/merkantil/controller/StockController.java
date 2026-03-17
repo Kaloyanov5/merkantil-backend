@@ -161,7 +161,7 @@ public class StockController {
             List<StockHistoryResponse> history = stockService.getStockHistory(symbol, startDate, endDate);
             return ResponseEntity.ok(history);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.ok(List.of());
         }
     }
 
