@@ -181,7 +181,7 @@ public class OrderService {
      * Update portfolio after SELL
      */
     private void updatePortfolioAfterSell(User user, Portfolio portfolio, Integer quantity) {
-        Integer remainingQuantity = portfolio.getQuantity() - quantity;
+        int remainingQuantity = portfolio.getQuantity() - quantity;
 
         if (remainingQuantity == 0) {
             // Sold all shares, remove position
@@ -203,10 +203,26 @@ public class OrderService {
         if (orderType == OrderType.MARKET) {
             // Get current market price from Massive
             MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
-            if (snapshot == null || snapshot.getLastTrade() == null) {
-                throw new IllegalArgumentException("Market is currently closed. Trading is only available during market hours.");
+
+            // Try lastTrade first, then day close, then DB price
+            if (snapshot != null) {
+                if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                        && snapshot.getLastTrade().getPrice() > 0) {
+                    return snapshot.getLastTrade().getPrice();
+                }
+                if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                        && snapshot.getDay().getClose() > 0) {
+                    return snapshot.getDay().getClose();
+                }
             }
-            return snapshot.getLastTrade().getPrice();
+
+            // Fall back to database price
+            if (stock.getCurrentPrice() != null && stock.getCurrentPrice() > 0) {
+                log.warn("Using DB price for {} — snapshot unavailable", stock.getSymbol());
+                return stock.getCurrentPrice();
+            }
+
+            throw new IllegalArgumentException("Unable to determine market price for " + stock.getSymbol() + ". Please try again shortly.");
         } else {
             // LIMIT order - use specified limit price
             if (request.getLimitPrice() == null || request.getLimitPrice() <= 0) {
