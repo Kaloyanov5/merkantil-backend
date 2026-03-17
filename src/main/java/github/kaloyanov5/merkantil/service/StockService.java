@@ -243,20 +243,29 @@ public class StockService {
             MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
 
             if (snapshot != null && (snapshot.getLastTrade() != null || snapshot.getDay() != null)) {
-                if (snapshot.getLastTrade() != null) {
+                if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                        && snapshot.getLastTrade().getPrice() > 0) {
                     stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
-                } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null) {
+                } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                        && snapshot.getDay().getClose() > 0) {
                     stock.setCurrentPrice(snapshot.getDay().getClose());
                 }
 
-                if (snapshot.getPrevDay() != null) {
+                if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
+                        && snapshot.getPrevDay().getClose() > 0) {
                     stock.setPreviousClose(snapshot.getPrevDay().getClose());
                 }
 
                 if (snapshot.getDay() != null) {
-                    stock.setDayHigh(snapshot.getDay().getHigh());
-                    stock.setDayLow(snapshot.getDay().getLow());
-                    stock.setVolume(snapshot.getDay().getVolume() != null ? snapshot.getDay().getVolume().longValue() : null);
+                    if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0) {
+                        stock.setDayHigh(snapshot.getDay().getHigh());
+                    }
+                    if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0) {
+                        stock.setDayLow(snapshot.getDay().getLow());
+                    }
+                    if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0) {
+                        stock.setVolume(snapshot.getDay().getVolume().longValue());
+                    }
                 }
 
                 stock.setLastUpdated(LocalDateTime.now());
