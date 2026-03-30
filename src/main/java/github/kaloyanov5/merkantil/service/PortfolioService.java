@@ -44,7 +44,7 @@ public class PortfolioService {
 
         for (Portfolio portfolio : portfolios) {
             Double currentPrice = getCurrentPrice(portfolio.getSymbol());
-            double positionValue = portfolio.getQuantity() * currentPrice;
+            double positionValue = currentPrice != null ? portfolio.getQuantity() * currentPrice : 0.0;
             double positionCost = portfolio.getQuantity() * portfolio.getAverageBuyPrice();
 
             totalValue += positionValue;
@@ -89,9 +89,8 @@ public class PortfolioService {
             return snapshot.getLastTrade().getPrice();
         }
 
-        // Last resort: use average buy price (not accurate but prevents errors)
-        log.warn("Unable to fetch current price for {}, using fallback", symbol);
-        return 0.0;
+        log.warn("Unable to fetch current price for {}", symbol);
+        return null;
     }
 
     /**
@@ -103,10 +102,10 @@ public class PortfolioService {
                 .orElse(null);
 
         Double currentPrice = getCurrentPrice(portfolio.getSymbol());
-        Double currentValue = portfolio.getQuantity() * currentPrice;
         Double totalCost = portfolio.getQuantity() * portfolio.getAverageBuyPrice();
-        Double unrealizedGain = currentValue - totalCost;
-        Double unrealizedGainPercent = totalCost > 0 ? (unrealizedGain / totalCost) * 100 : 0.0;
+        Double currentValue = currentPrice != null ? portfolio.getQuantity() * currentPrice : null;
+        Double unrealizedGain = currentValue != null ? currentValue - totalCost : null;
+        Double unrealizedGainPercent = (unrealizedGain != null && totalCost > 0) ? (unrealizedGain / totalCost) * 100 : null;
 
         return new PortfolioResponse(
                 portfolio.getId(),
