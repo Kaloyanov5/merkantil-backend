@@ -6,11 +6,11 @@ import github.kaloyanov5.merkantil.entity.StockPriceHistory;
 import github.kaloyanov5.merkantil.entity.Transaction;
 import github.kaloyanov5.merkantil.repository.StockPriceHistoryRepository;
 import github.kaloyanov5.merkantil.repository.TransactionRepository;
+import github.kaloyanov5.merkantil.util.MarketCalendar;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -25,8 +25,10 @@ import java.util.stream.Collectors;
 @Slf4j
 public class PortfolioGrowthService {
 
+
     private final TransactionRepository transactionRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
+    private final MarketCalendar marketCalendar;
 
     /**
      * Generate 30-day portfolio growth chart.
@@ -210,16 +212,8 @@ public class PortfolioGrowthService {
         return tradingDays;
     }
 
-    /**
-     * Check if a date is a trading day (simplified version).
-     * Excludes weekends. For production, should check against actual market calendar.
-     *
-     * @param date The date to check
-     * @return true if it's a trading day
-     */
     private boolean isTradingDay(LocalDate date) {
-        DayOfWeek dayOfWeek = date.getDayOfWeek();
-        return dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY;
+        return marketCalendar.isTradingDay(date);
     }
 
     /**

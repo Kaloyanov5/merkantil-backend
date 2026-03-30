@@ -427,6 +427,33 @@ public class MassiveApiService {
     }
 
     // ========================
+    // MARKET CALENDAR
+    // ========================
+
+    /**
+     * Fetch upcoming market holidays.
+     * GET /v1/marketstatus/upcoming
+     */
+    public List<MassiveMarketHoliday> getUpcomingHolidays() {
+        try {
+            List<MassiveMarketHoliday> response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1/marketstatus/upcoming")
+                            .queryParam("apiKey", apiKey)
+                            .build())
+                    .retrieve()
+                    .bodyToFlux(MassiveMarketHoliday.class)
+                    .collectList()
+                    .block();
+
+            return response != null ? response : Collections.emptyList();
+        } catch (Exception e) {
+            log.error("Error fetching upcoming market holidays: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // ========================
     // UTILITY
     // ========================
 
