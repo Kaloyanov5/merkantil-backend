@@ -41,7 +41,7 @@ public class AuthService {
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setBalance(10000.0);
+        user.setBalance(java.math.BigDecimal.valueOf(10000));
         User savedUser = userRepository.save(user);
         return new AuthResponse("User registered successfully", mapToUserResponse(savedUser));
     }

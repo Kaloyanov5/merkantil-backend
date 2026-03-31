@@ -4,6 +4,8 @@ import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.dto.request.OrderRequest;
 import github.kaloyanov5.merkantil.dto.response.OrderResponse;
 import github.kaloyanov5.merkantil.entity.*;
+
+import java.math.BigDecimal;
 import github.kaloyanov5.merkantil.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,9 +62,10 @@ public class OrderService {
      */
     private OrderResponse executeBuyOrder(User user, Stock stock, OrderRequest request, Double executionPrice) {
         Double totalCost = executionPrice * request.getQuantity();
+        BigDecimal totalCostDecimal = BigDecimal.valueOf(totalCost);
 
         // Check if user has sufficient funds
-        if (user.getBalance() < totalCost) {
+        if (user.getBalance().compareTo(totalCostDecimal) < 0) {
             throw new IllegalArgumentException(
                     String.format("Insufficient funds. Required: $%.2f, Available: $%.2f",
                             totalCost, user.getBalance())
@@ -80,7 +83,7 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
 
         // Debit user balance
-        user.setBalance(user.getBalance() - totalCost);
+        user.setBalance(user.getBalance().subtract(totalCostDecimal));
         userRepository.save(user);
 
         // Create transaction
@@ -119,6 +122,7 @@ public class OrderService {
         }
 
         Double totalRevenue = executionPrice * request.getQuantity();
+        BigDecimal totalRevenueDecimal = BigDecimal.valueOf(totalRevenue);
 
         // Create order
         Order order = new Order();
@@ -131,7 +135,7 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
 
         // Credit user balance
-        user.setBalance(user.getBalance() + totalRevenue);
+        user.setBalance(user.getBalance().add(totalRevenueDecimal));
         userRepository.save(user);
 
         // Create transaction

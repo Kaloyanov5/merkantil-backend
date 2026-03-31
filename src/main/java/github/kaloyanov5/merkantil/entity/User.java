@@ -11,6 +11,7 @@ import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -38,8 +39,11 @@ public class User {
     @JsonIgnore
     private String password;
 
-    @Column(nullable = false)
-    private Double balance = 0.0;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal balance = BigDecimal.ZERO;
+
+    @Version
+    private Long version;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -63,4 +67,12 @@ public class User {
     @JsonManagedReference
     @JsonIgnore
     private List<Transaction> transactions;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<PaymentMethod> paymentMethods;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<WalletTransaction> walletTransactions;
 }
