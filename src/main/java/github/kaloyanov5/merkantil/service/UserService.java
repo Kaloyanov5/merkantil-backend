@@ -13,6 +13,8 @@ import github.kaloyanov5.merkantil.repository.WalletTransactionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+
+import java.time.YearMonth;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -70,6 +72,11 @@ public class UserService {
         if (paymentMethodId != null) {
             paymentMethod = paymentMethodRepository.findByIdAndUserId(paymentMethodId, userId)
                     .orElseThrow(() -> new IllegalArgumentException("Payment method not found"));
+
+            YearMonth expiry = YearMonth.of(paymentMethod.getExpiryYear(), paymentMethod.getExpiryMonth());
+            if (expiry.isBefore(YearMonth.now())) {
+                throw new IllegalArgumentException("Card ending in " + paymentMethod.getLast4() + " has expired");
+            }
         }
 
         user.setBalance(user.getBalance().add(amount));
