@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import github.kaloyanov5.merkantil.dto.response.WalletTransactionResponse;
+
 import java.util.Map;
 
 @RestController
@@ -111,7 +113,7 @@ public class UserController {
     ) {
         try {
             User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.deposit(id, request.getAmount(), currentUser.getId());
+            BalanceResponse balance = userService.deposit(id, request.getAmount(), currentUser.getId(), request.getPaymentMethodId());
             return ResponseEntity.ok(Map.of(
                     "message", "Deposit successful",
                     "balance", balance
@@ -130,13 +132,27 @@ public class UserController {
     ) {
         try {
             User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.withdraw(id, request.getAmount(), currentUser.getId());
+            BalanceResponse balance = userService.withdraw(id, request.getAmount(), currentUser.getId()); // paymentMethodId not used for withdrawals
             return ResponseEntity.ok(Map.of(
                     "message", "Withdrawal successful",
                     "balance", balance
             ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        }
+    }
+
+    @GetMapping("/me/wallet/history")
+    public ResponseEntity<?> getWalletHistory(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        try {
+            User currentUser = authService.getCurrentUser();
+            Page<WalletTransactionResponse> history = userService.getWalletHistory(currentUser.getId(), page, size);
+            return ResponseEntity.ok(history);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
