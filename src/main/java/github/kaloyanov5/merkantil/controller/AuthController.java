@@ -43,7 +43,7 @@ public class AuthController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Invalid username or password"));
+                    .body(Map.of("error", "Invalid email or password"));
         }
     }
 
@@ -65,7 +65,8 @@ public class AuthController {
             User user = authService.getCurrentUser();
             UserResponse response = new UserResponse(
                     user.getId(),
-                    user.getUsername(),
+                    user.getFirstName(),
+                    user.getLastName(),
                     user.getEmail(),
                     user.getBalance(),
                     user.getCreatedAt()
