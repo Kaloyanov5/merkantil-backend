@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import github.kaloyanov5.merkantil.dto.request.TransferRequest;
 import github.kaloyanov5.merkantil.dto.response.WalletTransactionResponse;
 
 import java.util.Map;
@@ -76,6 +77,15 @@ public class UserController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @GetMapping("/lookup")
+    public ResponseEntity<?> lookupByEmail(@RequestParam String email) {
+        Map<String, String> result = userService.lookupByEmail(email);
+        if (result == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/{id}/balance")
@@ -144,6 +154,22 @@ public class UserController {
         }
     }
 
+    @PostMapping("/me/transfer")
+    public ResponseEntity<?> transfer(@Valid @RequestBody TransferRequest request) {
+        try {
+            User currentUser = authService.getCurrentUser();
+            BalanceResponse balance = userService.transfer(currentUser.getId(), request);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Transfer successful",
+                    "balance", balance
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        }
+    }
+
     @GetMapping("/me/wallet/history")
     public ResponseEntity<?> getWalletHistory(
             @RequestParam(defaultValue = "0") int page,
@@ -160,7 +186,8 @@ public class UserController {
 
     private boolean isValidSortField(String field) {
         return field.equals("id") ||
-                field.equals("username") ||
+                field.equals("firstName") ||
+                field.equals("lastName") ||
                 field.equals("email") ||
                 field.equals("balance") ||
                 field.equals("createdAt");

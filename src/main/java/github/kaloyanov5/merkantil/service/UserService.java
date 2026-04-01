@@ -1,5 +1,6 @@
 package github.kaloyanov5.merkantil.service;
 
+import github.kaloyanov5.merkantil.dto.request.TransferRequest;
 import github.kaloyanov5.merkantil.dto.response.BalanceResponse;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.dto.response.WalletTransactionResponse;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +31,12 @@ public class UserService {
     private final UserRepository userRepository;
     private final PaymentMethodRepository paymentMethodRepository;
     private final WalletTransactionRepository walletTransactionRepository;
+
+    public Map<String, String> lookupByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .map(u -> Map.of("firstName", u.getFirstName(), "lastName", u.getLastName()))
+                .orElse(null);
+    }
 
     public UserResponse getUserById(Long id) {
         User user = userRepository.findById(id)
@@ -46,8 +54,8 @@ public class UserService {
 
     public Page<UserResponse> searchUsers(String query, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        return userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(
-                query, query, pageable).map(this::mapToUserResponse);
+        return userRepository.findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+                query, query, query, pageable).map(this::mapToUserResponse);
     }
 
     public BalanceResponse getBalance(Long userId) {
@@ -70,7 +78,7 @@ public class UserService {
 
         PaymentMethod paymentMethod = null;
         if (paymentMethodId != null) {
-            paymentMethod = paymentMethodRepository.findByIdAndUserId(paymentMethodId, userId)
+            paymentMethod = paymentMethodRepository.findByIdAndUserIdAndDeletedAtIsNull(paymentMethodId, userId)
                     .orElseThrow(() -> new IllegalArgumentException("Payment method not found"));
 
             YearMonth expiry = YearMonth.of(paymentMethod.getExpiryYear(), paymentMethod.getExpiryMonth());
@@ -120,6 +128,49 @@ public class UserService {
         return new BalanceResponse(user.getId(), user.getBalance());
     }
 
+    @Transactional
+    public BalanceResponse transfer(Long senderId, TransferRequest request) {
+        if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Transfer amount must be positive");
+        }
+
+        User sender = userRepository.findById(senderId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        User recipient = userRepository.findByEmail(request.getRecipientEmail())
+                .orElseThrow(() -> new IllegalArgumentException("Recipient not found"));
+
+        if (sender.getId().equals(recipient.getId())) {
+            throw new IllegalArgumentException("Cannot transfer funds to yourself");
+        }
+
+        if (sender.getBalance().compareTo(request.getAmount()) < 0) {
+            throw new IllegalArgumentException(
+                    String.format("Insufficient funds. Available: $%.2f", sender.getBalance()));
+        }
+
+        sender.setBalance(sender.getBalance().subtract(request.getAmount()));
+        recipient.setBalance(recipient.getBalance().add(request.getAmount()));
+        userRepository.save(sender);
+        userRepository.save(recipient);
+
+        WalletTransaction outTx = new WalletTransaction();
+        outTx.setUser(sender);
+        outTx.setType(WalletTransactionType.TRANSFER_OUT);
+        outTx.setAmount(request.getAmount());
+        outTx.setNote(recipient.getEmail());
+        walletTransactionRepository.save(outTx);
+
+        WalletTransaction inTx = new WalletTransaction();
+        inTx.setUser(recipient);
+        inTx.setType(WalletTransactionType.TRANSFER_IN);
+        inTx.setAmount(request.getAmount());
+        inTx.setNote(sender.getEmail());
+        walletTransactionRepository.save(inTx);
+
+        return new BalanceResponse(sender.getId(), sender.getBalance());
+    }
+
     public Page<WalletTransactionResponse> getWalletHistory(Long userId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return walletTransactionRepository.findByUserIdOrderByTimestampDesc(userId, pageable)
@@ -129,6 +180,7 @@ public class UserService {
                         tx.getAmount(),
                         tx.getPaymentMethod() != null ? tx.getPaymentMethod().getLast4() : null,
                         tx.getPaymentMethod() != null ? tx.getPaymentMethod().getCardType() : null,
+                        tx.getNote(),
                         tx.getTimestamp()
                 ));
     }
@@ -136,7 +188,8 @@ public class UserService {
     private UserResponse mapToUserResponse(User user) {
         return new UserResponse(
                 user.getId(),
-                user.getUsername(),
+                user.getFirstName(),
+                user.getLastName(),
                 user.getEmail(),
                 user.getBalance(),
                 user.getCreatedAt()
