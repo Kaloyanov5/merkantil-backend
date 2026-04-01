@@ -12,20 +12,16 @@ import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByUsername(String username);
     Optional<User> findByEmail(String email);
-    boolean existsByUsername(String username);
     boolean existsByEmail(String email);
 
     Page<User> findAll(Pageable pageable);
 
-    // Search functionality
-    Page<User> findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(
-            String username, String email, Pageable pageable);
+    Page<User> findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
+            String firstName, String lastName, String email, Pageable pageable);
 
     @Query("SELECT COUNT(u) FROM User u WHERE u.createdAt > :date")
     Long countUsersCreatedAfter(@Param("date") LocalDateTime date);
 
-    // For admin features
     List<User> findByCreatedAtBefore(LocalDateTime date);
 }
