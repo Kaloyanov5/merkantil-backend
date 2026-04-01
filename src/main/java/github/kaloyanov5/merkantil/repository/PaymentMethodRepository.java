@@ -7,6 +7,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface PaymentMethodRepository extends JpaRepository<PaymentMethod, Long> {
-    List<PaymentMethod> findByUserId(Long userId);
-    Optional<PaymentMethod> findByIdAndUserId(Long id, Long userId);
+    List<PaymentMethod> findByUserIdAndDeletedAtIsNull(Long userId);
+    Optional<PaymentMethod> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 }

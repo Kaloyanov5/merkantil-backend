@@ -9,6 +9,8 @@ import github.kaloyanov5.merkantil.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 import java.util.List;
 
 @Service
@@ -35,16 +37,17 @@ public class PaymentMethodService {
     }
 
     public List<PaymentMethodResponse> getPaymentMethods(Long userId) {
-        return paymentMethodRepository.findByUserId(userId)
+        return paymentMethodRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
     public void deletePaymentMethod(Long userId, Long paymentMethodId) {
-        PaymentMethod pm = paymentMethodRepository.findByIdAndUserId(paymentMethodId, userId)
+        PaymentMethod pm = paymentMethodRepository.findByIdAndUserIdAndDeletedAtIsNull(paymentMethodId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Payment method not found"));
-        paymentMethodRepository.delete(pm);
+        pm.setDeletedAt(LocalDateTime.now());
+        paymentMethodRepository.save(pm);
     }
 
     private PaymentMethodResponse mapToResponse(PaymentMethod pm) {
