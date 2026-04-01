@@ -39,6 +39,10 @@ public class WalletTransaction {
     @JoinColumn(name = "payment_method_id")
     private PaymentMethod paymentMethod;
 
+    // counterparty email for TRANSFER_OUT / TRANSFER_IN
+    @Column(name = "note")
+    private String note;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime timestamp;

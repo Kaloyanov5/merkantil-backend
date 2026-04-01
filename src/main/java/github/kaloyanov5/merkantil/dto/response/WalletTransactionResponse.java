@@ -10,9 +10,10 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WalletTransactionResponse {
     private Long id;
-    private String type;       // DEPOSIT or WITHDRAWAL
+    private String type;       // DEPOSIT, WITHDRAWAL, TRANSFER_OUT, TRANSFER_IN
     private BigDecimal amount;
     private String cardLast4;  // null if no card used
     private String cardType;   // null if no card used
+    private String note;       // counterparty email for transfers
     private LocalDateTime timestamp;
 }
