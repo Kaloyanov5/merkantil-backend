@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class UserResponse {
     private Long id;
-    private String username;
+    private String firstName;
+    private String lastName;
     private String email;
     private BigDecimal balance;
     private LocalDateTime createdAt;

@@ -24,9 +24,11 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "Please provide a username")
-    @Column(unique = true, nullable = false)
-    private String username;
+    @Column(nullable = false, name = "first_name")
+    private String firstName;
+
+    @Column(nullable = false, name = "last_name")
+    private String lastName;
 
     @NotBlank(message = "Please provide an email")
     @Email(message = "Invalid email format")
