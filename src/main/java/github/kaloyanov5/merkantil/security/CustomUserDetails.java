@@ -18,15 +18,15 @@ public class CustomUserDetails implements UserDetails, Serializable {
     private static final long serialVersionUID = 1L;
 
     private final Long id;
-    private final String username;
+    private final String email;
     private final String password;
     private final String role;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    private CustomUserDetails(Long id, String username, String password, String role,
+    private CustomUserDetails(Long id, String email, String password, String role,
                               Collection<? extends GrantedAuthority> authorities) {
         this.id = id;
-        this.username = username;
+        this.email = email;
         this.password = password;
         this.role = role;
         this.authorities = authorities;
@@ -35,10 +35,16 @@ public class CustomUserDetails implements UserDetails, Serializable {
     public static CustomUserDetails from(User user) {
         return new CustomUserDetails(
                 user.getId(),
-                user.getUsername(),
+                user.getEmail(),
                 user.getPassword(),
                 user.getRole().name(),
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
+    }
+
+    // Spring Security requires this method — returns email as the principal identifier
+    @Override
+    public String getUsername() {
+        return email;
     }
 
     @Override public boolean isAccountNonExpired() { return true; }
