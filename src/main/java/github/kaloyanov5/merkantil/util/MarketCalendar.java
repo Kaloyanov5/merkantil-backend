@@ -4,6 +4,7 @@ import github.kaloyanov5.merkantil.service.MassiveApiService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.DayOfWeek;
@@ -21,7 +22,9 @@ public class MarketCalendar {
     private final Set<LocalDate> holidays = new HashSet<>();
 
     @PostConstruct
-    void loadHolidays() {
+    @Scheduled(cron = "0 0 6 * * MON") // every Monday at 06:00
+    public void loadHolidays() {
+        holidays.clear();
         massiveApiService.getUpcomingHolidays().stream()
                 .filter(h -> "NYSE".equals(h.getExchange()) && "closed".equals(h.getStatus()))
                 .map(h -> LocalDate.parse(h.getDate()))
