@@ -2,6 +2,7 @@ package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
 import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
+import github.kaloyanov5.merkantil.util.MarketCalendar;
 import github.kaloyanov5.merkantil.dto.response.StockHistoryResponse;
 import github.kaloyanov5.merkantil.dto.response.StockQuoteResponse;
 import github.kaloyanov5.merkantil.dto.response.StockResponse;
@@ -34,6 +35,7 @@ public class StockService {
     private final StockRepository stockRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
     private final MassiveApiService massiveApiService;
+    private final MarketCalendar marketCalendar;
 
     /**
      * Get all stocks with pagination
@@ -221,17 +223,16 @@ public class StockService {
     }
 
     /**
-     * Check if market is open
-     */
-    public boolean isMarketOpen() {
-        return massiveApiService.isMarketOpen();
-    }
-
-    /**
-     * Get detailed market status (OPEN, PRE_MARKET, AFTER_HOURS, CLOSED)
+     * Get detailed market status (OPEN, PRE_MARKET, AFTER_HOURS, CLOSED, HOLIDAY)
      */
     public Map<String, String> getMarketStatus() {
-        return massiveApiService.getDetailedMarketStatus();
+        Map<String, String> status = massiveApiService.getDetailedMarketStatus();
+        if ("CLOSED".equals(status.get("status")) && !marketCalendar.isTradingDay(LocalDate.now())) {
+            Map<String, String> result = new java.util.HashMap<>(status);
+            result.put("status", "HOLIDAY");
+            return result;
+        }
+        return status;
     }
 
     /**
