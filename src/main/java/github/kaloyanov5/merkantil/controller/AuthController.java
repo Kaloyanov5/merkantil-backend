@@ -6,9 +6,12 @@ import github.kaloyanov5.merkantil.dto.request.LoginRequest;
 import github.kaloyanov5.merkantil.dto.request.RegisterRequest;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,11 +23,17 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Tag(name = "Authentication", description = "Endpoints for user registration, login, logout and retrieving the current authenticated user")
 public class AuthController {
 
     private final AuthService authService;
 
     @PostMapping("/register")
+    @Operation(summary = "Register a new user", description = "Creates a new user account with the provided registration details and returns an authentication response")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "User registered successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid input or email already in use")
+    })
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
         try {
             AuthResponse response = authService.register(request);
@@ -35,6 +44,12 @@ public class AuthController {
     }
 
     @PostMapping("/login")
+    @Operation(summary = "Log in", description = "Authenticates a user with email and password, creates a session and returns an authentication response")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Login successful"),
+            @ApiResponse(responseCode = "400", description = "Validation error in request body"),
+            @ApiResponse(responseCode = "401", description = "Invalid email or password")
+    })
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest,
                                    HttpServletResponse httpResponse
     ) {
@@ -48,18 +63,21 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(HttpServletRequest request) {
-        authService.logout();
-
-        HttpSession session = request.getSession(false);
-        if (session != null) {
-            session.invalidate();
-        }
-
+    @Operation(summary = "Log out", description = "Invalidates the current user session and clears the authentication context")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Logged out successfully")
+    })
+    public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+        authService.logout(request, response);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
     @GetMapping("/me")
+    @Operation(summary = "Get current user", description = "Returns the profile information of the currently authenticated user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Current user profile returned successfully"),
+            @ApiResponse(responseCode = "401", description = "User not authenticated")
+    })
     public ResponseEntity<?> getCurrentUser() {
         try {
             User user = authService.getCurrentUser();

@@ -6,6 +6,10 @@ import github.kaloyanov5.merkantil.entity.User;
 import github.kaloyanov5.merkantil.service.AuthService;
 import github.kaloyanov5.merkantil.service.PortfolioGrowthService;
 import github.kaloyanov5.merkantil.service.PortfolioService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -19,6 +23,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/portfolio")
 @RequiredArgsConstructor
+@Tag(name = "Portfolio", description = "Endpoints for viewing the authenticated user's stock portfolio, positions and historical growth")
 public class PortfolioController {
 
     private final PortfolioService portfolioService;
@@ -30,6 +35,11 @@ public class PortfolioController {
      * GET /api/portfolio
      */
     @GetMapping
+    @Operation(summary = "Get portfolio", description = "Returns all current stock positions held by the authenticated user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Portfolio returned successfully"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated")
+    })
     public ResponseEntity<?> getUserPortfolio() {
         try {
             User user = authService.getCurrentUser();
@@ -46,6 +56,11 @@ public class PortfolioController {
      * GET /api/portfolio/summary
      */
     @GetMapping("/summary")
+    @Operation(summary = "Get portfolio summary", description = "Returns aggregated portfolio metrics including total value, total cost basis and overall gain/loss for the authenticated user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Portfolio summary returned successfully"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated")
+    })
     public ResponseEntity<?> getPortfolioSummary() {
         try {
             User user = authService.getCurrentUser();
@@ -62,6 +77,12 @@ public class PortfolioController {
      * GET /api/portfolio/AAPL
      */
     @GetMapping("/{symbol}")
+    @Operation(summary = "Get position by symbol", description = "Returns the authenticated user's current position (shares held, cost basis, current value) for the specified stock symbol")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Position returned successfully"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "404", description = "No position found for the given symbol")
+    })
     public ResponseEntity<?> getPosition(@PathVariable String symbol) {
         try {
             User user = authService.getCurrentUser();
@@ -85,6 +106,12 @@ public class PortfolioController {
      * This ensures financial accuracy - past values never use current prices.
      */
     @GetMapping("/growth")
+    @Operation(summary = "Get 30-day portfolio growth", description = "Returns one data point per trading day for the last 30 trading days. Values are reconstructed using historical prices and positions as of each day to ensure financial accuracy.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Growth data returned successfully"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "500", description = "Failed to calculate portfolio growth")
+    })
     public ResponseEntity<?> getPortfolioGrowth() {
         try {
             User user = authService.getCurrentUser();
@@ -108,6 +135,13 @@ public class PortfolioController {
      * Same financial reconstruction principles apply.
      */
     @GetMapping("/growth/range")
+    @Operation(summary = "Get portfolio growth for a custom date range", description = "Returns portfolio values for each trading day in the specified range. Uses the same historical price reconstruction as the 30-day endpoint.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Growth data returned successfully"),
+            @ApiResponse(responseCode = "400", description = "Start date is after end date"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "500", description = "Failed to calculate portfolio growth")
+    })
     public ResponseEntity<?> getPortfolioGrowthCustomRange(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
