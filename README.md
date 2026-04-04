@@ -94,6 +94,10 @@ massive:
     key: ${MASSIVE_API_KEY}
     base-url: https://api.massive.com
     timeout: 10000  # 10 seconds
+
+remember:
+  me:
+    key: ${REMEMBER_ME_KEY}
 ```
 
 * Use a dedicated database user with appropriate privileges.
