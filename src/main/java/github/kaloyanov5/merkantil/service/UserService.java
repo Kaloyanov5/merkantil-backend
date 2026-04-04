@@ -1,5 +1,6 @@
 package github.kaloyanov5.merkantil.service;
 
+import github.kaloyanov5.merkantil.dto.request.ChangePasswordRequest;
 import github.kaloyanov5.merkantil.dto.request.TransferRequest;
 import github.kaloyanov5.merkantil.dto.response.BalanceResponse;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
@@ -19,6 +20,7 @@ import java.time.YearMonth;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -31,6 +33,32 @@ public class UserService {
     private final UserRepository userRepository;
     private final PaymentMethodRepository paymentMethodRepository;
     private final WalletTransactionRepository walletTransactionRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final LoginSessionService loginSessionService;
+
+    @Transactional
+    public void changePassword(Long userId, ChangePasswordRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        if (!request.getNewPassword().equals(request.getConfirmNewPassword())) {
+            throw new IllegalArgumentException("New passwords do not match");
+        }
+
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("New password must differ from current password");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        // Revoke all active sessions across all devices
+        loginSessionService.revokeAllSessions(user.getId());
+    }
 
     public Map<String, String> lookupByEmail(String email) {
         return userRepository.findByEmail(email)

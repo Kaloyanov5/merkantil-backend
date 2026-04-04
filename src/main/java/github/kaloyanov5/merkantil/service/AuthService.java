@@ -8,6 +8,7 @@ import github.kaloyanov5.merkantil.dto.request.RegisterRequest;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.security.CustomUserDetails;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
+import org.springframework.security.web.authentication.rememberme.PersistentTokenBasedRememberMeServices;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +31,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final LoginSessionService loginSessionService;
+    private final PersistentTokenBasedRememberMeServices rememberMeServices;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -57,11 +62,34 @@ public class AuthService {
         CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        // Save login session record (IP, device info)
+        loginSessionService.saveSession(user.getId(), httpRequest.getSession().getId(), httpRequest);
+
+        // Set remember-me cookie if requested
+        if (request.isRememberMe()) {
+            // Wrap request to inject the remember-me parameter since we use JSON (not form)
+            HttpServletRequestWrapper rememberMeRequest = new HttpServletRequestWrapper(httpRequest) {
+                @Override
+                public String getParameter(String name) {
+                    if ("remember-me".equals(name)) return "true";
+                    return super.getParameter(name);
+                }
+            };
+            rememberMeServices.loginSuccess(rememberMeRequest, httpResponse, authentication);
+        }
+
         return new AuthResponse("User logged in successfully", mapToUserResponse(user));
     }
 
-    public void logout() {
-        SecurityContextHolder.clearContext();
+    public void logout(HttpServletRequest request, HttpServletResponse response) {
+        String sessionId = request.getSession(false) != null ? request.getSession(false).getId() : null;
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        rememberMeServices.logout(request, response, auth);
+        new SecurityContextLogoutHandler().logout(request, response, auth);
+        if (sessionId != null) {
+            loginSessionService.deleteSession(sessionId);
+        }
     }
 
     public User getCurrentUser() {
