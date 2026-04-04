@@ -40,4 +40,8 @@ public class MarketCalendar {
         }
         return !holidays.contains(date);
     }
+
+    public boolean isHoliday(LocalDate date) {
+        return holidays.contains(date);
+    }
 }

@@ -227,7 +227,7 @@ public class StockService {
      */
     public Map<String, String> getMarketStatus() {
         Map<String, String> status = massiveApiService.getDetailedMarketStatus();
-        if ("CLOSED".equals(status.get("status")) && !marketCalendar.isTradingDay(LocalDate.now())) {
+        if ("CLOSED".equals(status.get("status")) && marketCalendar.isHoliday(LocalDate.now())) {
             Map<String, String> result = new java.util.HashMap<>(status);
             result.put("status", "HOLIDAY");
             return result;
