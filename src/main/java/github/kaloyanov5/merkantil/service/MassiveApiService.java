@@ -3,7 +3,6 @@ package github.kaloyanov5.merkantil.service;
 import github.kaloyanov5.merkantil.dto.massive.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -422,6 +421,59 @@ public class MassiveApiService {
             return null;
         } catch (Exception e) {
             log.error("Error fetching previous day bar for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
+    // ========================
+    // NEWS
+    // ========================
+
+    /**
+     * Get recent news articles, optionally filtered by ticker.
+     * GET /v2/reference/news
+     */
+    public MassiveNewsResponse getNews(String ticker, Integer limit, String order, String sort) {
+        try {
+            log.info("Fetching news: ticker={}, limit={}", ticker, limit);
+
+            MassiveNewsResponse response = client.get()
+                    .uri(uriBuilder -> {
+                        uriBuilder.path("/v2/reference/news");
+                        if (ticker != null && !ticker.isBlank()) {
+                            uriBuilder.queryParam("ticker", ticker.toUpperCase());
+                        }
+                        if (limit != null) {
+                            uriBuilder.queryParam("limit", limit);
+                        }
+                        if (order != null && !order.isBlank()) {
+                            uriBuilder.queryParam("order", order);
+                        }
+                        if (sort != null && !sort.isBlank()) {
+                            uriBuilder.queryParam("sort", sort);
+                        }
+                        uriBuilder.queryParam("apiKey", apiKey);
+                        return uriBuilder.build();
+                    })
+                    .retrieve()
+                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                            clientResponse -> {
+                                log.error("Massive.com API error for news: HTTP {}", clientResponse.statusCode());
+                                return clientResponse.bodyToMono(String.class)
+                                        .map(body -> new RuntimeException("API error: " + body));
+                            })
+                    .bodyToMono(MassiveNewsResponse.class)
+                    .block();
+
+            if (response == null) {
+                log.warn("Null response fetching news");
+                return null;
+            }
+
+            log.info("Fetched {} news articles", response.getCount());
+            return response;
+        } catch (Exception e) {
+            log.error("Error fetching news: {}", e.getMessage());
             return null;
         }
     }
