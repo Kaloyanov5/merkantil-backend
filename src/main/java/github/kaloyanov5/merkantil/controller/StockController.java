@@ -1,8 +1,10 @@
 package github.kaloyanov5.merkantil.controller;
 
+import github.kaloyanov5.merkantil.dto.response.NewsArticleResponse;
 import github.kaloyanov5.merkantil.dto.response.StockHistoryResponse;
 import github.kaloyanov5.merkantil.dto.response.StockQuoteResponse;
 import github.kaloyanov5.merkantil.dto.response.StockResponse;
+import github.kaloyanov5.merkantil.service.NewsService;
 import github.kaloyanov5.merkantil.service.StockService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -25,6 +27,7 @@ import java.util.Map;
 public class StockController {
 
     private final StockService stockService;
+    private final NewsService newsService;
 
     /**
      * Get all stocks (paginated)
@@ -225,6 +228,34 @@ public class StockController {
             return ResponseEntity.ok(history);
         } catch (Exception e) {
             return ResponseEntity.ok(List.of());
+        }
+    }
+
+    /**
+     * Get market news
+     * GET /api/stocks/news?ticker=AAPL&limit=10&order=desc&sort=published_utc
+     */
+    @GetMapping("/news")
+    @Operation(summary = "Get market news", description = "Returns recent news articles from Massive API, optionally filtered by ticker symbol. Includes sentiment analysis, publisher details, and article metadata.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "News articles returned successfully"),
+            @ApiResponse(responseCode = "400", description = "Limit exceeds maximum of 50"),
+            @ApiResponse(responseCode = "500", description = "Failed to fetch news from upstream API")
+    })
+    public ResponseEntity<?> getNews(
+            @RequestParam(required = false) String ticker,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(defaultValue = "desc") String order,
+            @RequestParam(defaultValue = "published_utc") String sort
+    ) {
+        if (limit > 50) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Limit cannot exceed 50"));
+        }
+        try {
+            List<NewsArticleResponse> news = newsService.getNews(ticker, limit, order, sort);
+            return ResponseEntity.ok(news);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
 
