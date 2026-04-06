@@ -17,4 +17,5 @@ public class UserResponse {
     private String email;
     private BigDecimal balance;
     private LocalDateTime createdAt;
+    private Boolean emailVerified;
 }

@@ -47,6 +47,9 @@ public class User {
     @Version
     private Long version;
 
+    @Column(nullable = false)
+    private Boolean emailVerified = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;
