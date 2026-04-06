@@ -72,6 +72,21 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
+    @GetMapping("/verify-email")
+    @Operation(summary = "Verify email address", description = "Verifies the user's email address using the token sent to their inbox")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Email verified successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid or expired token")
+    })
+    public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+        try {
+            authService.verifyEmail(token);
+            return ResponseEntity.ok(Map.of("message", "Email verified successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/me")
     @Operation(summary = "Get current user", description = "Returns the profile information of the currently authenticated user")
     @ApiResponses({
@@ -87,7 +102,8 @@ public class AuthController {
                     user.getLastName(),
                     user.getEmail(),
                     user.getBalance(),
-                    user.getCreatedAt()
+                    user.getCreatedAt(),
+                    user.getEmailVerified()
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {
