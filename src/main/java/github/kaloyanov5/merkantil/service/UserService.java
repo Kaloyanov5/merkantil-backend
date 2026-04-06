@@ -220,7 +220,8 @@ public class UserService {
                 user.getLastName(),
                 user.getEmail(),
                 user.getBalance(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getEmailVerified()
         );
     }
 }

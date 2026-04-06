@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -23,6 +24,9 @@ import org.springframework.security.web.authentication.rememberme.PersistentToke
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -33,6 +37,11 @@ public class AuthService {
     private final SecurityContextRepository securityContextRepository;
     private final LoginSessionService loginSessionService;
     private final PersistentTokenBasedRememberMeServices rememberMeServices;
+    private final EmailService emailService;
+    private final StringRedisTemplate redisTemplate;
+
+    private static final String VERIFY_PREFIX = "email:verify:";
+    private static final Duration VERIFY_TTL = Duration.ofHours(24);
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -46,7 +55,12 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setBalance(java.math.BigDecimal.valueOf(10000));
         User savedUser = userRepository.save(user);
-        return new AuthResponse("User registered successfully", mapToUserResponse(savedUser));
+
+        String token = UUID.randomUUID().toString();
+        redisTemplate.opsForValue().set(VERIFY_PREFIX + token, savedUser.getId().toString(), VERIFY_TTL);
+        emailService.sendVerificationEmail(savedUser.getEmail(), token);
+
+        return new AuthResponse("User registered successfully. Please check your email to verify your account.", mapToUserResponse(savedUser));
     }
 
     public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
@@ -101,7 +115,21 @@ public class AuthService {
         throw new IllegalStateException("User not authenticated");
     }
 
+    @Transactional
+    public void verifyEmail(String token) {
+        String key = VERIFY_PREFIX + token;
+        String userId = redisTemplate.opsForValue().get(key);
+        if (userId == null) {
+            throw new IllegalArgumentException("Invalid or expired verification token");
+        }
+        User user = userRepository.findById(Long.parseLong(userId))
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        user.setEmailVerified(true);
+        userRepository.save(user);
+        redisTemplate.delete(key);
+    }
+
     private UserResponse mapToUserResponse(User user) {
-        return new UserResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getEmail(), user.getBalance(), user.getCreatedAt());
+        return new UserResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getEmail(), user.getBalance(), user.getCreatedAt(), user.getEmailVerified());
     }
 }
