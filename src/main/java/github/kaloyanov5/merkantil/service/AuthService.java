@@ -1,6 +1,7 @@
 package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.entity.User;
+import github.kaloyanov5.merkantil.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.repository.UserRepository;
 import github.kaloyanov5.merkantil.dto.response.AuthResponse;
 import github.kaloyanov5.merkantil.dto.request.LoginRequest;
@@ -76,14 +77,24 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
         );
 
+        CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        // If 2FA is enabled, send OTP and pause login — session not created yet
+        if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
+            String code = String.format("%06d", new Random().nextInt(1_000_000));
+            String tempToken = UUID.randomUUID().toString();
+            redisTemplate.opsForValue().set(TWO_FA_OTP_PREFIX + user.getId(), code, TWO_FA_TTL);
+            redisTemplate.opsForValue().set(TWO_FA_PENDING_PREFIX + tempToken, user.getId().toString(), TWO_FA_TTL);
+            emailService.send2faEmail(user.getEmail(), code);
+            throw new TwoFactorRequiredException(tempToken);
+        }
+
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, httpRequest, httpResponse);
-
-        CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
-        User user = userRepository.findById(principal.getId())
-                .orElseThrow(() -> new IllegalStateException("User not found"));
 
         // Save login session record (IP, device info)
         loginSessionService.saveSession(user.getId(), httpRequest.getSession().getId(), httpRequest);
@@ -205,6 +216,6 @@ public class AuthService {
     }
 
     private UserResponse mapToUserResponse(User user) {
-        return new UserResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getEmail(), user.getBalance(), user.getCreatedAt(), user.getEmailVerified());
+        return new UserResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getEmail(), user.getBalance(), user.getCreatedAt(), user.getEmailVerified(), user.getTwoFactorEnabled());
     }
 }

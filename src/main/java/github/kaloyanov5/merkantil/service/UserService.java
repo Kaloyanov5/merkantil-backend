@@ -221,7 +221,8 @@ public class UserService {
                 user.getEmail(),
                 user.getBalance(),
                 user.getCreatedAt(),
-                user.getEmailVerified()
+                user.getEmailVerified(),
+                user.getTwoFactorEnabled()
         );
     }
 }
