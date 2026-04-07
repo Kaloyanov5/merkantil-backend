@@ -15,6 +15,7 @@ public class OrderResponse {
     private String side;
     private Integer quantity;
     private Double executedPrice;
+    private Double limitPrice;
     private Double totalAmount;
     private String orderType;
     private String status;
