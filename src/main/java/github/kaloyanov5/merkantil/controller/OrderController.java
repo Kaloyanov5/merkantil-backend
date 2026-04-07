@@ -80,6 +80,30 @@ public class OrderController {
     }
 
     /**
+     * Cancel an open limit order
+     * DELETE /api/orders/{id}
+     */
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Cancel limit order", description = "Cancels an open limit order. Reserved funds are refunded for BUY orders.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Order cancelled successfully"),
+            @ApiResponse(responseCode = "400", description = "Order not found, not cancellable, or does not belong to user"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated")
+    })
+    public ResponseEntity<?> cancelOrder(@PathVariable Long id) {
+        try {
+            User user = authService.getCurrentUser();
+            OrderResponse order = orderService.cancelOrder(user.getId(), id);
+            return ResponseEntity.ok(order);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "User not authenticated"));
+        }
+    }
+
+    /**
      * Get orders by symbol
      * GET /api/orders/symbol/AAPL?page=0&size=20
      */
