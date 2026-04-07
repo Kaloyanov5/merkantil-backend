@@ -2,8 +2,11 @@ package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
 import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
+import github.kaloyanov5.merkantil.entity.Order;
+import github.kaloyanov5.merkantil.entity.Side;
 import github.kaloyanov5.merkantil.entity.Stock;
 import github.kaloyanov5.merkantil.entity.StockPriceHistory;
+import github.kaloyanov5.merkantil.repository.OrderRepository;
 import github.kaloyanov5.merkantil.repository.StockPriceHistoryRepository;
 import github.kaloyanov5.merkantil.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,8 @@ public class StockPriceScheduler {
     private final StockRepository stockRepository;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
     private final MassiveApiService massiveApiService;
+    private final OrderRepository orderRepository;
+    private final OrderService orderService;
 
     private static final int BATCH_SIZE = 10; // Process 10 stocks per API call
 
@@ -342,8 +347,44 @@ public class StockPriceScheduler {
             // save to database (cache already evicted by @CacheEvict on calling method)
             stockRepository.saveAll(stocks);
             log.debug("Updated batch of {} stocks in database", stocks.size());
+
+            // Check if any open limit orders can now be filled
+            checkLimitOrders(stocks);
         } catch (Exception e) {
             log.error("Error updating stock batch: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Check open limit orders for the updated stocks and execute any that meet their condition.
+     * BUY: execute when currentPrice <= limitPrice
+     * SELL: execute when currentPrice >= limitPrice
+     */
+    private void checkLimitOrders(List<Stock> stocks) {
+        List<String> symbols = stocks.stream().map(Stock::getSymbol).toList();
+        List<Order> openOrders = orderRepository.findOpenLimitOrdersForSymbols(symbols);
+
+        if (openOrders.isEmpty()) return;
+
+        Map<String, Double> priceMap = stocks.stream()
+                .filter(s -> s.getCurrentPrice() != null)
+                .collect(Collectors.toMap(Stock::getSymbol, Stock::getCurrentPrice));
+
+        for (Order order : openOrders) {
+            try {
+                Double currentPrice = priceMap.get(order.getSymbol());
+                if (currentPrice == null || order.getLimitPrice() == null) continue;
+
+                boolean conditionMet = order.getType() == Side.BUY
+                        ? currentPrice <= order.getLimitPrice()
+                        : currentPrice >= order.getLimitPrice();
+
+                if (conditionMet) {
+                    orderService.executeLimitOrder(order, currentPrice);
+                }
+            } catch (Exception e) {
+                log.error("Error checking limit order {}: {}", order.getId(), e.getMessage());
+            }
         }
     }
 

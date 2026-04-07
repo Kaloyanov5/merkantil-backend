@@ -4,6 +4,7 @@ import github.kaloyanov5.merkantil.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.dto.request.OrderRequest;
 import github.kaloyanov5.merkantil.dto.response.OrderResponse;
 import github.kaloyanov5.merkantil.entity.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import github.kaloyanov5.merkantil.repository.*;
@@ -33,11 +34,9 @@ public class OrderService {
      */
     @Transactional
     public OrderResponse placeOrder(Long userId, OrderRequest request) {
-        // Validate user
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        // Validate stock exists
         Stock stock = stockRepository.findBySymbol(request.getSymbol().toUpperCase())
                 .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + request.getSymbol()));
 
@@ -45,16 +44,166 @@ public class OrderService {
             throw new IllegalArgumentException("Stock is not active for trading");
         }
 
-        // Get current market price
-        Double executionPrice = getExecutionPrice(request, stock);
-
-        // Validate order based on side
+        OrderType orderType = OrderType.valueOf(request.getOrderType().toUpperCase());
         Side side = Side.valueOf(request.getSide().toUpperCase());
-        if (side == Side.BUY) {
-            return executeBuyOrder(user, stock, request, executionPrice);
-        } else {
-            return executeSellOrder(user, stock, request, executionPrice);
+
+        if (orderType == OrderType.LIMIT) {
+            if (request.getLimitPrice() == null || request.getLimitPrice() <= 0) {
+                throw new IllegalArgumentException("Limit price is required for LIMIT orders");
+            }
+            return side == Side.BUY
+                    ? placeLimitBuyOrder(user, stock, request)
+                    : placeLimitSellOrder(user, stock, request);
         }
+
+        Double executionPrice = getMarketPrice(stock);
+        return side == Side.BUY
+                ? executeBuyOrder(user, stock, request, executionPrice)
+                : executeSellOrder(user, stock, request, executionPrice);
+    }
+
+    /**
+     * Place a LIMIT BUY order — reserves funds immediately, waits for price condition.
+     */
+    private OrderResponse placeLimitBuyOrder(User user, Stock stock, OrderRequest request) {
+        Double reserved = request.getLimitPrice() * request.getQuantity();
+        BigDecimal reservedDecimal = BigDecimal.valueOf(reserved);
+
+        if (user.getBalance().compareTo(reservedDecimal) < 0) {
+            throw new IllegalArgumentException(
+                    String.format("Insufficient funds. Required: $%.2f, Available: $%.2f",
+                            reserved, user.getBalance()));
+        }
+
+        user.setBalance(user.getBalance().subtract(reservedDecimal));
+        userRepository.save(user);
+
+        Order order = new Order();
+        order.setUser(user);
+        order.setSymbol(stock.getSymbol());
+        order.setType(Side.BUY);
+        order.setQuantity(request.getQuantity());
+        order.setLimitPrice(request.getLimitPrice());
+        order.setOrderType(OrderType.LIMIT);
+        order.setStatus(OrderStatus.OPEN);
+        Order saved = orderRepository.save(order);
+
+        log.info("LIMIT BUY placed: User {} wants {} shares of {} at ${} (funds reserved)",
+                user.getId(), request.getQuantity(), stock.getSymbol(), request.getLimitPrice());
+        return mapToOrderResponse(saved);
+    }
+
+    /**
+     * Place a LIMIT SELL order — validates shares exist, waits for price condition.
+     */
+    private OrderResponse placeLimitSellOrder(User user, Stock stock, OrderRequest request) {
+        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), stock.getSymbol())
+                .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
+
+        if (portfolio.getQuantity() < request.getQuantity()) {
+            throw new IllegalArgumentException(
+                    String.format("Insufficient shares. You own %d but tried to sell %d",
+                            portfolio.getQuantity(), request.getQuantity()));
+        }
+
+        Order order = new Order();
+        order.setUser(user);
+        order.setSymbol(stock.getSymbol());
+        order.setType(Side.SELL);
+        order.setQuantity(request.getQuantity());
+        order.setLimitPrice(request.getLimitPrice());
+        order.setOrderType(OrderType.LIMIT);
+        order.setStatus(OrderStatus.OPEN);
+        Order saved = orderRepository.save(order);
+
+        log.info("LIMIT SELL placed: User {} wants to sell {} shares of {} at ${}",
+                user.getId(), request.getQuantity(), stock.getSymbol(), request.getLimitPrice());
+        return mapToOrderResponse(saved);
+    }
+
+    /**
+     * Execute an open LIMIT order — called by the scheduler when price condition is met.
+     */
+    @Transactional
+    public void executeLimitOrder(Order order, Double executionPrice) {
+        User user = order.getUser();
+
+        if (order.getType() == Side.BUY) {
+            // Funds already reserved — just update portfolio and create transaction
+            updatePortfolioAfterBuy(user, order.getSymbol(), order.getQuantity(), executionPrice);
+
+            // Refund the difference if executed below limit price
+            Double reserved = order.getLimitPrice() * order.getQuantity();
+            Double actualCost = executionPrice * order.getQuantity();
+            double refund = reserved - actualCost;
+            if (refund > 0) {
+                user.setBalance(user.getBalance().add(BigDecimal.valueOf(refund)));
+                userRepository.save(user);
+            }
+        } else {
+            // SELL: check shares still exist (may have been sold manually)
+            Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), order.getSymbol())
+                    .orElse(null);
+            if (portfolio == null || portfolio.getQuantity() < order.getQuantity()) {
+                log.warn("LIMIT SELL order {} cancelled — user no longer has enough shares", order.getId());
+                order.setStatus(OrderStatus.CANCELLED);
+                orderRepository.save(order);
+                return;
+            }
+            Double revenue = executionPrice * order.getQuantity();
+            user.setBalance(user.getBalance().add(BigDecimal.valueOf(revenue)));
+            userRepository.save(user);
+            updatePortfolioAfterSell(user, portfolio, order.getQuantity());
+        }
+
+        Transaction transaction = new Transaction();
+        transaction.setUser(user);
+        transaction.setOrder(order);
+        transaction.setStockSymbol(order.getSymbol());
+        transaction.setType(order.getType());
+        transaction.setQuantity(order.getQuantity());
+        transaction.setPrice(executionPrice);
+        transactionRepository.save(transaction);
+
+        order.setAtPrice(executionPrice);
+        order.setStatus(OrderStatus.FILLED);
+        orderRepository.save(order);
+
+        log.info("LIMIT {} order {} filled: {} shares of {} at ${}",
+                order.getType(), order.getId(), order.getQuantity(), order.getSymbol(), executionPrice);
+    }
+
+    /**
+     * Cancel an open LIMIT order. Refunds reserved funds for BUY orders.
+     */
+    @Transactional
+    public OrderResponse cancelOrder(Long userId, Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+
+        if (!order.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Order does not belong to you");
+        }
+        if (order.getStatus() != OrderStatus.OPEN) {
+            throw new IllegalArgumentException("Only open orders can be cancelled");
+        }
+        if (order.getOrderType() != OrderType.LIMIT) {
+            throw new IllegalArgumentException("Only limit orders can be cancelled");
+        }
+
+        // Refund reserved funds for BUY orders
+        if (order.getType() == Side.BUY) {
+            Double refund = order.getLimitPrice() * order.getQuantity();
+            User user = order.getUser();
+            user.setBalance(user.getBalance().add(BigDecimal.valueOf(refund)));
+            userRepository.save(user);
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        orderRepository.save(order);
+
+        log.info("LIMIT order {} cancelled by user {}", orderId, userId);
+        return mapToOrderResponse(order);
     }
 
     /**
@@ -79,7 +228,8 @@ public class OrderService {
         order.setType(Side.BUY);
         order.setQuantity(request.getQuantity());
         order.setAtPrice(executionPrice);
-        order.setOrderType(OrderType.valueOf(request.getOrderType().toUpperCase()));
+        order.setOrderType(OrderType.MARKET);
+        order.setStatus(OrderStatus.FILLED);
         Order savedOrder = orderRepository.save(order);
 
         // Debit user balance
@@ -102,7 +252,7 @@ public class OrderService {
         log.info("BUY order executed: User {} bought {} shares of {} at ${} (Total: ${})",
                 user.getId(), request.getQuantity(), stock.getSymbol(), executionPrice, totalCost);
 
-        return mapToOrderResponse(savedOrder, executionPrice, totalCost, "FILLED");
+        return mapToOrderResponse(savedOrder);
     }
 
     /**
@@ -131,7 +281,8 @@ public class OrderService {
         order.setType(Side.SELL);
         order.setQuantity(request.getQuantity());
         order.setAtPrice(executionPrice);
-        order.setOrderType(OrderType.valueOf(request.getOrderType().toUpperCase()));
+        order.setOrderType(OrderType.MARKET);
+        order.setStatus(OrderStatus.FILLED);
         Order savedOrder = orderRepository.save(order);
 
         // Credit user balance
@@ -154,7 +305,7 @@ public class OrderService {
         log.info("SELL order executed: User {} sold {} shares of {} at ${} (Total: ${})",
                 user.getId(), request.getQuantity(), stock.getSymbol(), executionPrice, totalRevenue);
 
-        return mapToOrderResponse(savedOrder, executionPrice, totalRevenue, "FILLED");
+        return mapToOrderResponse(savedOrder);
     }
 
     /**
@@ -199,41 +350,28 @@ public class OrderService {
     }
 
     /**
-     * Get execution price based on order type
+     * Get current market price for MARKET orders.
      */
-    private Double getExecutionPrice(OrderRequest request, Stock stock) {
-        OrderType orderType = OrderType.valueOf(request.getOrderType().toUpperCase());
+    private Double getMarketPrice(Stock stock) {
+        MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
 
-        if (orderType == OrderType.MARKET) {
-            // Get current market price from Massive
-            MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
-
-            // Try lastTrade first, then day close, then DB price
-            if (snapshot != null) {
-                if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
-                        && snapshot.getLastTrade().getPrice() > 0) {
-                    return snapshot.getLastTrade().getPrice();
-                }
-                if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                        && snapshot.getDay().getClose() > 0) {
-                    return snapshot.getDay().getClose();
-                }
+        if (snapshot != null) {
+            if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                    && snapshot.getLastTrade().getPrice() > 0) {
+                return snapshot.getLastTrade().getPrice();
             }
-
-            // Fall back to database price
-            if (stock.getCurrentPrice() != null && stock.getCurrentPrice() > 0) {
-                log.warn("Using DB price for {} — snapshot unavailable", stock.getSymbol());
-                return stock.getCurrentPrice();
+            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                    && snapshot.getDay().getClose() > 0) {
+                return snapshot.getDay().getClose();
             }
-
-            throw new IllegalArgumentException("Unable to determine market price for " + stock.getSymbol() + ". Please try again shortly.");
-        } else {
-            // LIMIT order - use specified limit price
-            if (request.getLimitPrice() == null || request.getLimitPrice() <= 0) {
-                throw new IllegalArgumentException("Limit price is required for LIMIT orders");
-            }
-            return request.getLimitPrice();
         }
+
+        if (stock.getCurrentPrice() != null && stock.getCurrentPrice() > 0) {
+            log.warn("Using DB price for {} — snapshot unavailable", stock.getSymbol());
+            return stock.getCurrentPrice();
+        }
+
+        throw new IllegalArgumentException("Unable to determine market price for " + stock.getSymbol() + ". Please try again shortly.");
     }
 
     /**
@@ -241,14 +379,7 @@ public class OrderService {
      */
     public Page<OrderResponse> getUserOrders(Long userId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
-        Page<Order> orders = orderRepository.findByUserId(userId, pageable);
-
-        return orders.map(order -> mapToOrderResponse(
-                order,
-                order.getAtPrice(),
-                order.getAtPrice() * order.getQuantity(),
-                "FILLED"
-        ));
+        return orderRepository.findByUserId(userId, pageable).map(this::mapToOrderResponse);
     }
 
     /**
@@ -256,26 +387,21 @@ public class OrderService {
      */
     public Page<OrderResponse> getUserOrdersBySymbol(Long userId, String symbol, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
-        Page<Order> ordersBySymbol = orderRepository.findByUserIdAndSymbol(userId, symbol, pageable);
-
-        return ordersBySymbol.map(order -> mapToOrderResponse(
-                order,
-                order.getAtPrice(),
-                order.getAtPrice() * order.getQuantity(),
-                "FILLED"
-        ));
+        return orderRepository.findByUserIdAndSymbol(userId, symbol, pageable).map(this::mapToOrderResponse);
     }
 
-    private OrderResponse mapToOrderResponse(Order order, Double executedPrice, Double totalAmount, String status) {
+    private OrderResponse mapToOrderResponse(Order order) {
+        Double total = order.getAtPrice() != null ? order.getAtPrice() * order.getQuantity() : null;
         return new OrderResponse(
                 order.getId(),
                 order.getSymbol(),
                 order.getType().name(),
                 order.getQuantity(),
-                executedPrice,
-                totalAmount,
+                order.getAtPrice(),
+                order.getLimitPrice(),
+                total,
                 order.getOrderType().name(),
-                status,
+                order.getStatus().name(),
                 order.getTimestamp()
         );
     }
