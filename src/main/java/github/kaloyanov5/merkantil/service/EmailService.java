@@ -47,6 +47,47 @@ public class EmailService {
         sendHtmlEmail(to, "Verify your Merkantil account", html);
     }
 
+    public void send2faEmail(String to, String code) {
+        String html = """
+                <html><body style="font-family:Arial,sans-serif;background:#f4f4f4;padding:20px">
+                  <div style="max-width:480px;margin:auto;background:#fff;border-radius:8px;padding:32px">
+                    <h2 style="color:#1a1a1a">Your login code</h2>
+                    <p style="color:#555">Use the code below to complete your Merkantil login. It expires in 5 minutes.</p>
+                    <div style="margin:24px 0;text-align:center;font-size:36px;font-weight:bold;
+                                letter-spacing:8px;color:#0066ff;background:#f0f4ff;
+                                padding:16px;border-radius:8px">
+                      %s
+                    </div>
+                    <p style="color:#555">If you did not attempt to log in, secure your account immediately.</p>
+                  </div>
+                </body></html>
+                """.formatted(code);
+
+        sendHtmlEmail(to, "Your Merkantil login code", html);
+    }
+
+    public void sendPasswordResetEmail(String to, String code) {
+        String html = """
+                <html><body style="font-family:Arial,sans-serif;background:#f4f4f4;padding:20px">
+                  <div style="max-width:480px;margin:auto;background:#fff;border-radius:8px;padding:32px">
+                    <h2 style="color:#1a1a1a">Reset your password</h2>
+                    <p style="color:#555">Use the code below to reset your Merkantil password. It expires in 15 minutes.</p>
+                    <div style="margin:24px 0;text-align:center;font-size:36px;font-weight:bold;
+                                letter-spacing:8px;color:#0066ff;background:#f0f4ff;
+                                padding:16px;border-radius:8px">
+                      %s
+                    </div>
+                    <p style="color:#555">Enter this code on the password reset page along with your new password.</p>
+                    <p style="margin-top:24px;color:#999;font-size:12px">
+                      If you did not request a password reset, you can ignore this email.
+                    </p>
+                  </div>
+                </body></html>
+                """.formatted(code);
+
+        sendHtmlEmail(to, "Reset your Merkantil password", html);
+    }
+
     private void sendHtmlEmail(String to, String subject, String html) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
