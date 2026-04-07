@@ -60,9 +60,60 @@ public class AuthController {
         try {
             AuthResponse response = authService.login(request, httpRequest, httpResponse);
             return ResponseEntity.ok(response);
+        } catch (TwoFactorRequiredException e) {
+            return ResponseEntity.ok(Map.of(
+                    "twoFactorRequired", true,
+                    "tempToken", e.getTempToken()
+            ));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Invalid email or password"));
+        }
+    }
+
+    @PostMapping("/verify-2fa")
+    @Operation(summary = "Complete 2FA login", description = "Verifies the 6-digit code sent to the user's email and completes the login, creating a session")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Login completed successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid or expired code")
+    })
+    public ResponseEntity<?> verify2fa(@Valid @RequestBody TwoFactorVerifyRequest request,
+                                       HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        try {
+            AuthResponse response = authService.verify2fa(request.getTempToken(), request.getCode(), httpRequest, httpResponse);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/2fa/enable")
+    @Operation(summary = "Enable 2FA", description = "Enables two-factor authentication for the current user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "2FA enabled"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated")
+    })
+    public ResponseEntity<?> enable2fa() {
+        try {
+            authService.enable2fa();
+            return ResponseEntity.ok(Map.of("message", "Two-factor authentication enabled"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+    }
+
+    @PostMapping("/2fa/disable")
+    @Operation(summary = "Disable 2FA", description = "Disables two-factor authentication for the current user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "2FA disabled"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated")
+    })
+    public ResponseEntity<?> disable2fa() {
+        try {
+            authService.disable2fa();
+            return ResponseEntity.ok(Map.of("message", "Two-factor authentication disabled"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
         }
     }
 
@@ -132,7 +183,8 @@ public class AuthController {
                     user.getEmail(),
                     user.getBalance(),
                     user.getCreatedAt(),
-                    user.getEmailVerified()
+                    user.getEmailVerified(),
+                    user.getTwoFactorEnabled()
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {
