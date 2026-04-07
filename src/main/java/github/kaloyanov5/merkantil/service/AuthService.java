@@ -25,6 +25,7 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -42,6 +43,13 @@ public class AuthService {
 
     private static final String VERIFY_PREFIX = "email:verify:";
     private static final Duration VERIFY_TTL = Duration.ofHours(24);
+
+    private static final String RESET_PREFIX = "password:reset:";
+    private static final Duration RESET_TTL = Duration.ofMinutes(15);
+
+    private static final String TWO_FA_OTP_PREFIX = "2fa:otp:";
+    private static final String TWO_FA_PENDING_PREFIX = "2fa:pending:";
+    private static final Duration TWO_FA_TTL = Duration.ofMinutes(5);
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -113,6 +121,73 @@ public class AuthService {
                     .orElseThrow(() -> new IllegalStateException("User not found"));
         }
         throw new IllegalStateException("User not authenticated");
+    }
+
+    public AuthResponse verify2fa(String tempToken, String code, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        String userId = redisTemplate.opsForValue().get(TWO_FA_PENDING_PREFIX + tempToken);
+        if (userId == null) {
+            throw new IllegalArgumentException("Invalid or expired session, please log in again");
+        }
+        String storedCode = redisTemplate.opsForValue().get(TWO_FA_OTP_PREFIX + userId);
+        if (storedCode == null || !storedCode.equals(code)) {
+            throw new IllegalArgumentException("Invalid or expired code");
+        }
+
+        User user = userRepository.findById(Long.parseLong(userId))
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        CustomUserDetails userDetails = CustomUserDetails.from(user);
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, httpRequest, httpResponse);
+
+        loginSessionService.saveSession(user.getId(), httpRequest.getSession().getId(), httpRequest);
+
+        redisTemplate.delete(TWO_FA_PENDING_PREFIX + tempToken);
+        redisTemplate.delete(TWO_FA_OTP_PREFIX + userId);
+
+        return new AuthResponse("Login successful", mapToUserResponse(user));
+    }
+
+    @Transactional
+    public void enable2fa() {
+        User user = getCurrentUser();
+        user.setTwoFactorEnabled(true);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void disable2fa() {
+        User user = getCurrentUser();
+        user.setTwoFactorEnabled(false);
+        userRepository.save(user);
+    }
+
+    public void forgotPassword(String email) {
+        // Don't reveal whether the email exists — silently return if not found
+        if (!userRepository.existsByEmail(email)) {
+            return;
+        }
+        String code = String.format("%06d", new Random().nextInt(1_000_000));
+        redisTemplate.opsForValue().set(RESET_PREFIX + email, code, RESET_TTL);
+        emailService.sendPasswordResetEmail(email, code);
+    }
+
+    @Transactional
+    public void resetPassword(String email, String code, String newPassword) {
+        String key = RESET_PREFIX + email;
+        String storedCode = redisTemplate.opsForValue().get(key);
+        if (storedCode == null || !storedCode.equals(code)) {
+            throw new IllegalArgumentException("Invalid or expired reset code");
+        }
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        redisTemplate.delete(key);
     }
 
     @Transactional

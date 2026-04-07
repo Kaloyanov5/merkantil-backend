@@ -2,8 +2,12 @@ package github.kaloyanov5.merkantil.controller;
 
 import github.kaloyanov5.merkantil.entity.User;
 import github.kaloyanov5.merkantil.dto.response.AuthResponse;
+import github.kaloyanov5.merkantil.dto.request.ForgotPasswordRequest;
 import github.kaloyanov5.merkantil.dto.request.LoginRequest;
 import github.kaloyanov5.merkantil.dto.request.RegisterRequest;
+import github.kaloyanov5.merkantil.dto.request.ResetPasswordRequest;
+import github.kaloyanov5.merkantil.dto.request.TwoFactorVerifyRequest;
+import github.kaloyanov5.merkantil.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -70,6 +74,31 @@ public class AuthController {
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
         authService.logout(request, response);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+    }
+
+    @PostMapping("/forgot-password")
+    @Operation(summary = "Forgot password", description = "Sends a 6-digit reset code to the user's email address. Always returns 200 to avoid revealing whether the email exists.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Reset code sent if email exists")
+    })
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request.getEmail());
+        return ResponseEntity.ok(Map.of("message", "If that email is registered you will receive a reset code shortly"));
+    }
+
+    @PostMapping("/reset-password")
+    @Operation(summary = "Reset password", description = "Resets the user's password using the 6-digit code sent to their email")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Password reset successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid or expired reset code")
+    })
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        try {
+            authService.resetPassword(request.getEmail(), request.getCode(), request.getNewPassword());
+            return ResponseEntity.ok(Map.of("message", "Password reset successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/verify-email")
