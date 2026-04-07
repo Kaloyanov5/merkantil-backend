@@ -43,14 +43,21 @@ public class Order {
     @Column(nullable = false)
     private Integer quantity;
 
-    @NotNull
-    @Column(nullable = false, name = "at_price")
+    @Column(name = "at_price")
     private Double atPrice;
+
+    @Column(name = "limit_price")
+    private Double limitPrice;
 
     @NotNull
     @Column(nullable = false, name = "order_type")
     @Enumerated(EnumType.STRING)
     private OrderType orderType;
+
+    @NotNull
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status = OrderStatus.OPEN;
 
     @CreatedDate
     @Column(nullable = false, updatable = false)
