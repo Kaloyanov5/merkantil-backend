@@ -18,4 +18,5 @@ public class UserResponse {
     private BigDecimal balance;
     private LocalDateTime createdAt;
     private Boolean emailVerified;
+    private Boolean twoFactorEnabled;
 }

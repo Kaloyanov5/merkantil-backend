@@ -50,6 +50,9 @@ public class User {
     @Column(nullable = false)
     private Boolean emailVerified = false;
 
+    @Column(nullable = false)
+    private Boolean twoFactorEnabled = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;
