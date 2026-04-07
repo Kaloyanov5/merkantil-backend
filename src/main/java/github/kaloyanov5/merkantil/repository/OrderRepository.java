@@ -1,6 +1,7 @@
 package github.kaloyanov5.merkantil.repository;
 
 import github.kaloyanov5.merkantil.entity.Order;
+import github.kaloyanov5.merkantil.entity.OrderStatus;
 import github.kaloyanov5.merkantil.entity.OrderType;
 import github.kaloyanov5.merkantil.entity.Side;
 import github.kaloyanov5.merkantil.entity.User;
@@ -38,4 +39,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Long countByUserIdAndType(@Param("user_id") Long userId, @Param("side") Side side);
 
     Long user(User user);
+
+    @Query("SELECT o FROM Order o WHERE o.symbol IN :symbols AND o.status = github.kaloyanov5.merkantil.entity.OrderStatus.OPEN AND o.orderType = github.kaloyanov5.merkantil.entity.OrderType.LIMIT")
+    List<Order> findOpenLimitOrdersForSymbols(@Param("symbols") List<String> symbols);
+
+    List<Order> findByUserIdAndStatus(Long userId, OrderStatus status);
 }
