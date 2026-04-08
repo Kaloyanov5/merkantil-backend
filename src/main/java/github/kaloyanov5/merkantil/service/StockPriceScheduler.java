@@ -12,6 +12,7 @@ import github.kaloyanov5.merkantil.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,7 @@ public class StockPriceScheduler {
     private final MassiveApiService massiveApiService;
     private final OrderRepository orderRepository;
     private final OrderService orderService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private static final int BATCH_SIZE = 10; // Process 10 stocks per API call
 
@@ -81,7 +83,7 @@ public class StockPriceScheduler {
      * Save end-of-day snapshot to history at market close (4:00 PM EST)
      * Runs every day at 4:05 PM to capture closing prices
      */
-    @Scheduled(cron = "0 5 16 * * MON-FRI") // 4:05 PM EST, Monday-Friday
+    @Scheduled(cron = "0 30 0 * * TUE-SAT") // 12:30 AM local (after 4 PM EST market close), Tue-Sat
     @Transactional
     public void saveEndOfDayHistory() {
         log.info("Starting end-of-day history capture...");
@@ -347,6 +349,12 @@ public class StockPriceScheduler {
             // save to database (cache already evicted by @CacheEvict on calling method)
             stockRepository.saveAll(stocks);
             log.debug("Updated batch of {} stocks in database", stocks.size());
+
+            // Broadcast updated prices to all connected WebSocket clients
+            Map<String, Double> priceUpdate = stocks.stream()
+                    .filter(s -> s.getCurrentPrice() != null)
+                    .collect(Collectors.toMap(Stock::getSymbol, Stock::getCurrentPrice));
+            messagingTemplate.convertAndSend("/topic/prices", priceUpdate);
 
             // Check if any open limit orders can now be filled
             checkLimitOrders(stocks);
