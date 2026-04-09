@@ -28,6 +28,7 @@ public class OrderService {
     private final StockRepository stockRepository;
     private final UserRepository userRepository;
     private final MassiveApiService massiveApiService;
+    private final EmailService emailService;
 
     /**
      * Place a new order (BUY or SELL)
@@ -171,6 +172,24 @@ public class OrderService {
 
         log.info("LIMIT {} order {} filled: {} shares of {} at ${}",
                 order.getType(), order.getId(), order.getQuantity(), order.getSymbol(), executionPrice);
+
+        double totalValue = executionPrice * order.getQuantity();
+        double refund = order.getType() == Side.BUY
+                ? Math.max(0, order.getLimitPrice() * order.getQuantity() - totalValue)
+                : 0;
+        try {
+            emailService.sendLimitOrderFilledEmail(
+                    user.getEmail(),
+                    order.getType().name(),
+                    order.getSymbol(),
+                    order.getQuantity(),
+                    executionPrice,
+                    totalValue,
+                    refund
+            );
+        } catch (Exception e) {
+            log.error("Failed to send order fill email for order {}: {}", order.getId(), e.getMessage());
+        }
     }
 
     /**
