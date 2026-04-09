@@ -72,33 +72,32 @@ public class StockImportService {
      * Import top N most popular stocks
      */
     public ImportResult importTopStocks(int limit) {
-        log.info("Importing top {} stocks from predefined list...", limit);
+        log.info("Importing top {} stocks...", limit);
 
-        // Predefined list of popular stocks
-        String[] popularStocks = {
-                "AAPL",  // Apple
-                "MSFT",  // Microsoft
-                "GOOGL", // Google
-                "AMZN",  // Amazon
-                "TSLA",  // Tesla
-                "NVDA",  // NVIDIA
-                "META",  // Meta (Facebook)
-                "INTC"   // Intel
+        // Curated list of top US stocks ordered by market cap
+        String[] topStocks = {
+                "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
+                "META", "TSLA", "AVGO", "JPM", "LLY",
+                "V", "UNH", "XOM", "MA", "COST",
+                "HD", "JNJ", "ABBV", "NFLX", "BAC",
+                "WMT", "CRM", "CVX", "ORCL", "MRK",
+                "AMD", "PG", "KO", "PEP", "TMO",
+                "ADBE", "ACN", "WFC", "MS", "GS",
+                "DIS", "IBM", "QCOM", "CSCO", "TXN",
+                "NOW", "UBER", "INTU", "AMAT", "PM",
+                "T", "VZ", "NEE", "INTC", "GE"
         };
 
-        int count = 0;
         int imported = 0;
         int failed = 0;
 
-        for (String symbol : popularStocks) {
-            if (count >= limit) break;
-
+        for (int i = 0; i < Math.min(limit, topStocks.length); i++) {
+            String symbol = topStocks[i];
             try {
                 MassiveTickerDetail asset = massiveApiService.getAsset(symbol);
                 if (asset != null && Boolean.TRUE.equals(asset.getActive())) {
                     importStock(asset);
                     imported++;
-                    count++;
                 } else {
                     log.warn("Stock {} not active or not found", symbol);
                     failed++;
@@ -111,7 +110,7 @@ public class StockImportService {
 
         String message = String.format("Imported %d stocks, %d failed", imported, failed);
         log.info(message);
-        return new ImportResult(popularStocks.length, imported, 0, message);
+        return new ImportResult(Math.min(limit, topStocks.length), imported, 0, message);
     }
 
     /**
