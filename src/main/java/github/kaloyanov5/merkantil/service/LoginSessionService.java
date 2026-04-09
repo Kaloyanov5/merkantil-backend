@@ -25,6 +25,9 @@ public class LoginSessionService {
     private final Parser uaParser = new Parser();
 
     public void saveSession(Long userId, String sessionId, HttpServletRequest request) {
+        if (loginSessionRepository.findBySessionId(sessionId).isPresent()) {
+            return;
+        }
         LoginSession session = new LoginSession();
         session.setUserId(userId);
         session.setSessionId(sessionId);
