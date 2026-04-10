@@ -44,8 +44,7 @@ public class StockPriceScheduler {
      * With 30 stocks and batch size 10: 3 API calls per update
      */
     @Scheduled(fixedRate = 30000) // 30 seconds = 30000 milliseconds
-    @Transactional
-    @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true) // Clear all caches
+    @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updateAllStockPrices() {
         if (!massiveApiService.isMarketOpen()) {
             log.debug("Market is closed, skipping price update");
@@ -403,13 +402,22 @@ public class StockPriceScheduler {
      * resets at market open before the first trades come in.
      */
     private void updateStockFromSnapshot(Stock stock, MassiveSnapshotTicker snapshot) {
-        // lastTrade may be null outside trading hours — fall back to day close
+        // Priority: lastTrade.price > min.close (last minute bar) > fmv > day.close
+        // day.close is only populated at end of day by Polygon/Massive — not useful intraday
         if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
                 && snapshot.getLastTrade().getPrice() > 0) {
             stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
+        } else if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
+                && snapshot.getMin().getClose() > 0) {
+            stock.setCurrentPrice(snapshot.getMin().getClose());
+        } else if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
+            stock.setCurrentPrice(snapshot.getFmv());
         } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
                 && snapshot.getDay().getClose() > 0) {
             stock.setCurrentPrice(snapshot.getDay().getClose());
+        } else {
+            log.debug("No valid price in snapshot for {}, currentPrice unchanged ({})",
+                    stock.getSymbol(), stock.getCurrentPrice());
         }
 
         if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
@@ -436,8 +444,7 @@ public class StockPriceScheduler {
      * Manual trigger for price update (useful for testing)
      * This method can be called directly without waiting for the schedule
      */
-    @Transactional
-    @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true) // Clear all caches
+    @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updatePricesNow() {
         log.info("Manual price update triggered");
 
