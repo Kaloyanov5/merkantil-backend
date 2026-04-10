@@ -53,6 +53,9 @@ public class User {
     @Column(nullable = false)
     private Boolean twoFactorEnabled = false;
 
+    @Column(nullable = false)
+    private Boolean banned = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;

@@ -184,7 +184,8 @@ public class AuthController {
                     user.getBalance(),
                     user.getCreatedAt(),
                     user.getEmailVerified(),
-                    user.getTwoFactorEnabled()
+                    user.getTwoFactorEnabled(),
+                    user.getBanned()
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {

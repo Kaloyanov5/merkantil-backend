@@ -222,7 +222,8 @@ public class UserService {
                 user.getBalance(),
                 user.getCreatedAt(),
                 user.getEmailVerified(),
-                user.getTwoFactorEnabled()
+                user.getTwoFactorEnabled(),
+                user.getBanned()
         );
     }
 }

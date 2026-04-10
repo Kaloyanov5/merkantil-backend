@@ -216,6 +216,6 @@ public class AuthService {
     }
 
     private UserResponse mapToUserResponse(User user) {
-        return new UserResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getEmail(), user.getBalance(), user.getCreatedAt(), user.getEmailVerified(), user.getTwoFactorEnabled());
+        return new UserResponse(user.getId(), user.getFirstName(), user.getLastName(), user.getEmail(), user.getBalance(), user.getCreatedAt(), user.getEmailVerified(), user.getTwoFactorEnabled(), user.getBanned());
     }
 }

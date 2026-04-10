@@ -19,4 +19,5 @@ public class UserResponse {
     private LocalDateTime createdAt;
     private Boolean emailVerified;
     private Boolean twoFactorEnabled;
+    private Boolean banned;
 }
