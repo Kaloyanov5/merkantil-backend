@@ -16,6 +16,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,6 +31,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Users", description = "Endpoints for managing user accounts, balances, wallet operations, sessions and password changes")
 public class UserController {
 
@@ -288,13 +290,16 @@ public class UserController {
     public ResponseEntity<?> getActiveSessions(HttpServletRequest httpRequest) {
         try {
             User currentUser = authService.getCurrentUser();
-            String currentSessionId = httpRequest.getSession(false) != null
-                    ? httpRequest.getSession(false).getId() : null;
+            jakarta.servlet.http.HttpSession session = httpRequest.getSession(false);
+            String currentSessionId = session != null ? session.getId() : null;
             java.util.List<LoginSessionResponse> sessions =
                     loginSessionService.getActiveSessions(currentUser.getId(), currentSessionId);
             return ResponseEntity.ok(sessions);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        } catch (Exception e) {
+            log.error("Error fetching sessions: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to fetch sessions"));
         }
     }
 
