@@ -114,26 +114,29 @@ public class StockImportService {
     }
 
     /**
-     * Import a single stock by symbol
+     * Import a single stock by symbol.
+     * Returns CREATED, UPDATED, or FAILED.
      */
-    public boolean importSingleStock(String symbol) {
+    public SingleImportResult importSingleStock(String symbol) {
         log.info("Importing stock: {}", symbol);
 
         MassiveTickerDetail asset = massiveApiService.getAsset(symbol.toUpperCase());
         if (asset == null) {
             log.error("Stock not found: {}", symbol);
-            return false;
+            return SingleImportResult.FAILED;
         }
 
         if (asset.getActive() == null || !asset.getActive()) {
             log.error("Stock {} is not active", symbol);
-            return false;
+            return SingleImportResult.FAILED;
         }
 
-        importStock(asset);
-        log.info("Successfully imported stock: {}", symbol);
-        return true;
+        boolean isNew = importStock(asset);
+        log.info("{} stock: {}", isNew ? "Imported" : "Updated", symbol);
+        return isNew ? SingleImportResult.CREATED : SingleImportResult.UPDATED;
     }
+
+    public enum SingleImportResult { CREATED, UPDATED, FAILED }
 
     /**
      * Import or update a stock from Massive ticker detail
