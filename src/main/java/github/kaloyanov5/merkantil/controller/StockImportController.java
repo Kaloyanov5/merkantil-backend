@@ -1,6 +1,7 @@
 package github.kaloyanov5.merkantil.controller;
 
 import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
+import github.kaloyanov5.merkantil.dto.request.ImportMultipleRequest;
 import github.kaloyanov5.merkantil.repository.StockRepository;
 import github.kaloyanov5.merkantil.service.MassiveApiService;
 import github.kaloyanov5.merkantil.service.StockImportService;
@@ -78,13 +79,12 @@ public class StockImportController {
                         .body(Map.of("error", "Symbol is required"));
             }
 
-            boolean success = stockImportService.importSingleStock(symbol);
-            if (success) {
-                return ResponseEntity.ok(Map.of("message", "Stock imported successfully: " + symbol));
-            } else {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Failed to import stock: " + symbol));
-            }
+            StockImportService.SingleImportResult result = stockImportService.importSingleStock(symbol);
+            return switch (result) {
+                case CREATED -> ResponseEntity.ok(Map.of("message", "Stock imported: " + symbol, "status", "created"));
+                case UPDATED -> ResponseEntity.ok(Map.of("message", "Stock already exists, data refreshed: " + symbol, "status", "updated"));
+                case FAILED -> ResponseEntity.badRequest().body(Map.of("error", "Stock not found or inactive: " + symbol));
+            };
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Import failed: " + e.getMessage()));
@@ -97,9 +97,9 @@ public class StockImportController {
      * Body: { "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN"] }
      */
     @PostMapping("/multiple")
-    public ResponseEntity<?> importMultipleStocks(@RequestBody Map<String, List<String>> request) {
+    public ResponseEntity<?> importMultipleStocks(@RequestBody ImportMultipleRequest request) {
         try {
-            List<String> symbols = request.get("symbols");
+            List<String> symbols = request.getSymbols();
             if (symbols == null || symbols.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "symbols array is required and cannot be empty"));
@@ -116,11 +116,13 @@ public class StockImportController {
 
             for (String symbol : symbols) {
                 try {
-                    if (stockImportService.importSingleStock(symbol.toUpperCase())) {
-                        imported++;
-                    } else {
+                    StockImportService.SingleImportResult result =
+                            stockImportService.importSingleStock(symbol.toUpperCase());
+                    if (result == StockImportService.SingleImportResult.FAILED) {
                         failed++;
                         failedSymbols.add(symbol);
+                    } else {
+                        imported++;
                     }
                 } catch (Exception e) {
                     failed++;
