@@ -56,6 +56,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Query("SELECT COUNT(t) FROM Transaction t WHERE t.user.id = :userId")
     Long countByUserId(@Param("userId") Long userId);
 
+    @Query("SELECT COALESCE(SUM(t.totalAmount), 0) FROM Transaction t")
+    Double sumTotalVolume();
+
     /*
     Most traded stocks
     @Query("SELECT t.stockSymbol, COUNT(t) as tradeCount FROM Transaction t WHERE t.user.id = :userId GROUP BY t.stockSymbol ORDER BY tradeCount DESC")

@@ -21,6 +21,8 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
 
     Page<Stock> findBySector(String sector, Pageable pageable);
 
+    long countByIsActiveTrue();
+
     @Query("SELECT DISTINCT s.sector FROM Stock s WHERE s.sector IS NOT NULL ORDER BY s.sector")
     List<String> findAllSectors();
 
