@@ -36,9 +36,22 @@ public class LoginSessionService {
         loginSessionRepository.save(session);
     }
 
+    @Transactional
     public List<LoginSessionResponse> getActiveSessions(Long userId, String currentSessionId) {
         return loginSessionRepository.findByUserId(userId).stream()
-                .filter(ls -> sessionRepository.findById(ls.getSessionId()) != null)
+                .filter(ls -> {
+                    try {
+                        boolean exists = sessionRepository.findById(ls.getSessionId()) != null;
+                        if (!exists) {
+                            loginSessionRepository.deleteBySessionId(ls.getSessionId());
+                        }
+                        return exists;
+                    } catch (Exception e) {
+                        log.warn("Removing stale session {} (store error: {})", ls.getSessionId(), e.getMessage());
+                        loginSessionRepository.deleteBySessionId(ls.getSessionId());
+                        return false;
+                    }
+                })
                 .map(ls -> new LoginSessionResponse(
                         ls.getSessionId(),
                         ls.getIp(),
