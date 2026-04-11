@@ -140,6 +140,38 @@ public class EmailService {
         sendHtmlEmail(to, "Limit order filled — " + sideLabel + " " + quantity + " " + symbol, html);
     }
 
+    public void sendTransferReceivedEmail(String to, String senderEmail,
+                                          java.math.BigDecimal amount, String description) {
+        String descriptionHtml = (description != null && !description.isBlank())
+                ? "<p style=\"color:#555;margin-top:8px\">Note: <em>%s</em></p>".formatted(description)
+                : "";
+
+        String html = """
+                <html><body style="font-family:Arial,sans-serif;background:#f4f4f4;padding:20px">
+                  <div style="max-width:480px;margin:auto;background:#fff;border-radius:8px;padding:32px">
+                    %s
+                    <h2 style="color:#1a1a1a">You received a transfer</h2>
+                    <p style="color:#555">A transfer has been sent to your Merkantil wallet.</p>
+                    <div style="margin:24px 0;background:#f9fafb;border-radius:8px;padding:20px">
+                      <table style="width:100%%;border-collapse:collapse">
+                        <tr><td style="color:#888;padding:6px 0">From</td>
+                            <td style="text-align:right;font-weight:bold;color:#1a1a1a">%s</td></tr>
+                        <tr style="border-top:1px solid #e5e7eb">
+                            <td style="color:#888;padding:10px 0 6px">Amount</td>
+                            <td style="text-align:right;font-weight:bold;font-size:18px;color:#16a34a;padding-top:10px">+$%s</td></tr>
+                      </table>
+                      %s
+                    </div>
+                    <p style="color:#999;font-size:12px;margin-top:8px">
+                      Log in to Merkantil to view your updated balance.
+                    </p>
+                  </div>
+                </body></html>
+                """.formatted(LOGO, senderEmail, String.format("%.2f", amount), descriptionHtml);
+
+        sendHtmlEmail(to, "You received $" + String.format("%.2f", amount) + " on Merkantil", html);
+    }
+
     private void sendHtmlEmail(String to, String subject, String html) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
