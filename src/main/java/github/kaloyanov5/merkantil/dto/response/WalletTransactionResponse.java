@@ -14,6 +14,7 @@ public class WalletTransactionResponse {
     private BigDecimal amount;
     private String cardLast4;  // null if no card used
     private String cardType;   // null if no card used
-    private String note;       // counterparty email for transfers
+    private String note;        // counterparty email for transfers
+    private String description; // optional user-provided description
     private LocalDateTime timestamp;
 }

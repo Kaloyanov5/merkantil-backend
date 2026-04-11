@@ -43,6 +43,10 @@ public class WalletTransaction {
     @Column(name = "note")
     private String note;
 
+    // optional user-provided description for transfers
+    @Column(name = "description", length = 200)
+    private String description;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime timestamp;

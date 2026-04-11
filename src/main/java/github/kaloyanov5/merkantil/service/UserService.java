@@ -14,6 +14,7 @@ import github.kaloyanov5.merkantil.repository.UserRepository;
 import github.kaloyanov5.merkantil.repository.WalletTransactionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 
 import java.time.YearMonth;
@@ -28,6 +29,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
@@ -35,6 +37,7 @@ public class UserService {
     private final WalletTransactionRepository walletTransactionRepository;
     private final PasswordEncoder passwordEncoder;
     private final LoginSessionService loginSessionService;
+    private final EmailService emailService;
 
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request) {
@@ -187,6 +190,7 @@ public class UserService {
         outTx.setType(WalletTransactionType.TRANSFER_OUT);
         outTx.setAmount(request.getAmount());
         outTx.setNote(recipient.getEmail());
+        outTx.setDescription(request.getDescription());
         walletTransactionRepository.save(outTx);
 
         WalletTransaction inTx = new WalletTransaction();
@@ -194,7 +198,16 @@ public class UserService {
         inTx.setType(WalletTransactionType.TRANSFER_IN);
         inTx.setAmount(request.getAmount());
         inTx.setNote(sender.getEmail());
+        inTx.setDescription(request.getDescription());
         walletTransactionRepository.save(inTx);
+
+        try {
+            emailService.sendTransferReceivedEmail(
+                    recipient.getEmail(), sender.getEmail(),
+                    request.getAmount(), request.getDescription());
+        } catch (Exception e) {
+            log.warn("Failed to send transfer email to {}: {}", recipient.getEmail(), e.getMessage());
+        }
 
         return new BalanceResponse(sender.getId(), sender.getBalance());
     }
@@ -209,6 +222,7 @@ public class UserService {
                         tx.getPaymentMethod() != null ? tx.getPaymentMethod().getLast4() : null,
                         tx.getPaymentMethod() != null ? tx.getPaymentMethod().getCardType() : null,
                         tx.getNote(),
+                        tx.getDescription(),
                         tx.getTimestamp()
                 ));
     }
