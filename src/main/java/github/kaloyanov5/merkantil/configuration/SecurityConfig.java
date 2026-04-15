@@ -113,11 +113,6 @@ public class SecurityConfig {
                 )
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                        .invalidSessionStrategy((request, response) -> {
-                            response.setStatus(401);
-                            response.setContentType("application/json");
-                            response.getWriter().write("{\"error\":\"Session expired or revoked\"}");
-                        })
                 )
                 .rememberMe(remember -> remember
                         .rememberMeServices(rememberMeServices())
