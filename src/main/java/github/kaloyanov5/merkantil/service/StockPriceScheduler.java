@@ -46,11 +46,6 @@ public class StockPriceScheduler {
     @Scheduled(fixedRate = 30000) // 30 seconds = 30000 milliseconds
     @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updateAllStockPrices() {
-        if (!massiveApiService.isMarketOpen()) {
-            log.debug("Market is closed, skipping price update");
-            return;
-        }
-
         try {
             log.info("Starting scheduled stock price update for all stocks...");
 

@@ -80,47 +80,16 @@ public class StockService {
             throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
         }
 
-        // lastTrade may be null outside trading hours — fall back to day close price
-        Double currentPrice = null;
-        if (snapshot.getLastTrade() != null) {
-            currentPrice = snapshot.getLastTrade().getPrice();
-        } else if (snapshot.getDay() != null) {
-            currentPrice = snapshot.getDay().getClose();
-        }
-
+        Double currentPrice = resolvePrice(snapshot);
         if (currentPrice == null) {
             throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
         }
-        Double previousClose = snapshot.getPrevDay() != null
-                ? snapshot.getPrevDay().getClose()
-                : null;
 
-        Double change = null;
-        Double changePercent = null;
-
-        if (previousClose != null && currentPrice != null) {
-            change = currentPrice - previousClose;
-            changePercent = (change / previousClose) * 100;
-        }
-
-        // Get stock name from database
         String name = stockRepository.findBySymbol(symbol.toUpperCase())
                 .map(Stock::getName)
                 .orElse(null);
 
-        return new StockQuoteResponse(
-                symbol.toUpperCase(),
-                name,
-                currentPrice,
-                change,
-                changePercent,
-                snapshot.getDay() != null ? snapshot.getDay().getHigh() : null,
-                snapshot.getDay() != null ? snapshot.getDay().getLow() : null,
-                snapshot.getDay() != null ? snapshot.getDay().getOpen() : null,
-                previousClose,
-                snapshot.getDay() != null ? snapshot.getDay().getVolume() : null,
-                LocalDateTime.now()
-        );
+        return buildQuoteResponse(symbol.toUpperCase(), name, currentPrice, snapshot);
     }
 
     /**
@@ -280,47 +249,64 @@ public class StockService {
     }
 
     private StockQuoteResponse convertSnapshotToQuote(String symbol, MassiveSnapshotTicker snapshot) {
-        if (snapshot == null) {
-            return null;
-        }
+        if (snapshot == null) return null;
 
-        Double currentPrice = null;
-        if (snapshot.getLastTrade() != null) {
-            currentPrice = snapshot.getLastTrade().getPrice();
-        } else if (snapshot.getDay() != null) {
-            currentPrice = snapshot.getDay().getClose();
-        }
-
-        if (currentPrice == null) {
-            return null;
-        }
-        Double previousClose = snapshot.getPrevDay() != null
-                ? snapshot.getPrevDay().getClose()
-                : null;
-
-        Double change = null;
-        Double changePercent = null;
-
-        if (previousClose != null && currentPrice != null) {
-            change = currentPrice - previousClose;
-            changePercent = (change / previousClose) * 100;
-        }
+        Double currentPrice = resolvePrice(snapshot);
+        if (currentPrice == null) return null;
 
         String name = stockRepository.findBySymbol(symbol).map(Stock::getName).orElse(null);
+        return buildQuoteResponse(symbol, name, currentPrice, snapshot);
+    }
 
-        return new StockQuoteResponse(
-                symbol,
-                name,
-                currentPrice,
-                change,
-                changePercent,
-                snapshot.getDay() != null ? snapshot.getDay().getHigh() : null,
-                snapshot.getDay() != null ? snapshot.getDay().getLow() : null,
-                snapshot.getDay() != null ? snapshot.getDay().getOpen() : null,
-                previousClose,
-                snapshot.getDay() != null ? snapshot.getDay().getVolume() : null,
-                LocalDateTime.now()
-        );
+    /**
+     * Resolves the best available current price from a snapshot.
+     * Priority: lastTrade > min.close (last minute bar) > fmv > day.close
+     * day.close is 0 during trading hours — min.close is the correct intraday source.
+     */
+    private Double resolvePrice(MassiveSnapshotTicker snapshot) {
+        if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                && snapshot.getLastTrade().getPrice() > 0) {
+            return snapshot.getLastTrade().getPrice();
+        }
+        if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
+                && snapshot.getMin().getClose() > 0) {
+            return snapshot.getMin().getClose();
+        }
+        if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
+            return snapshot.getFmv();
+        }
+        if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                && snapshot.getDay().getClose() > 0) {
+            return snapshot.getDay().getClose();
+        }
+        return null;
+    }
+
+    private StockQuoteResponse buildQuoteResponse(String symbol, String name,
+                                                   Double currentPrice, MassiveSnapshotTicker snapshot) {
+        Double previousClose = snapshot.getPrevDay() != null ? snapshot.getPrevDay().getClose() : null;
+
+        // Prefer Massive's pre-computed change values; fall back to manual calculation
+        Double change = snapshot.getTodaysChange() != null
+                ? snapshot.getTodaysChange()
+                : (previousClose != null ? currentPrice - previousClose : null);
+        Double changePercent = snapshot.getTodaysChangePerc() != null
+                ? snapshot.getTodaysChangePerc()
+                : (previousClose != null && previousClose > 0 ? (currentPrice - previousClose) / previousClose * 100 : null);
+
+        // day OHLV fields are 0 during pre/after-hours — return null instead of 0
+        Double dayHigh   = snapshot.getDay() != null && snapshot.getDay().getHigh() != null
+                           && snapshot.getDay().getHigh() > 0 ? snapshot.getDay().getHigh() : null;
+        Double dayLow    = snapshot.getDay() != null && snapshot.getDay().getLow() != null
+                           && snapshot.getDay().getLow() > 0 ? snapshot.getDay().getLow() : null;
+        Double dayOpen   = snapshot.getDay() != null && snapshot.getDay().getOpen() != null
+                           && snapshot.getDay().getOpen() > 0 ? snapshot.getDay().getOpen() : null;
+        Long   dayVolume = snapshot.getDay() != null && snapshot.getDay().getVolume() != null
+                           && snapshot.getDay().getVolume() > 0
+                           ? snapshot.getDay().getVolume() : null;
+
+        return new StockQuoteResponse(symbol, name, currentPrice, change, changePercent,
+                dayHigh, dayLow, dayOpen, previousClose, dayVolume, LocalDateTime.now());
     }
 
     private StockResponse mapToStockResponse(Stock stock) {
