@@ -80,7 +80,9 @@ public class StockService {
             throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
         }
 
-        Double currentPrice = resolvePrice(snapshot);
+        String marketSession = resolveMarketSession();
+
+        Double currentPrice = resolveRegularPrice(snapshot, marketSession);
         if (currentPrice == null) {
             throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
         }
@@ -89,7 +91,7 @@ public class StockService {
                 .map(Stock::getName)
                 .orElse(null);
 
-        return buildQuoteResponse(symbol.toUpperCase(), name, currentPrice, snapshot);
+        return buildQuoteResponse(symbol.toUpperCase(), name, currentPrice, snapshot, marketSession);
     }
 
     /**
@@ -185,8 +187,10 @@ public class StockService {
         Map<String, MassiveSnapshotTicker> snapshots = massiveApiService.getMultipleSnapshots(
                 symbols.stream().map(String::toUpperCase).collect(Collectors.toList()));
 
+        String marketSession = resolveMarketSession();
+
         return snapshots.entrySet().stream()
-                .map(entry -> convertSnapshotToQuote(entry.getKey(), entry.getValue()))
+                .map(entry -> convertSnapshotToQuote(entry.getKey(), entry.getValue(), marketSession))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
@@ -205,65 +209,106 @@ public class StockService {
     }
 
     /**
-     * Update stock price from Massive
+     * Update stock price from Massive (used for cache-miss refresh in getStockBySymbol).
+     * Delegates to the same session-aware logic used by the scheduler.
      */
     @Transactional
     protected void updateStockPriceFromMassive(Stock stock) {
         try {
             MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
+            if (snapshot == null) return;
 
-            if (snapshot != null && (snapshot.getLastTrade() != null || snapshot.getDay() != null)) {
-                if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
-                        && snapshot.getLastTrade().getPrice() > 0) {
-                    stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
-                } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                        && snapshot.getDay().getClose() > 0) {
-                    stock.setCurrentPrice(snapshot.getDay().getClose());
+            String marketSession = resolveMarketSession();
+
+            if ("OPEN".equals(marketSession)) {
+                Double price = resolveRegularPrice(snapshot, marketSession);
+                if (price != null) stock.setCurrentPrice(price);
+                stock.setExtendedHoursPrice(null);
+                if (snapshot.getDay() != null) {
+                    if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0)
+                        stock.setDayHigh(snapshot.getDay().getHigh());
+                    if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0)
+                        stock.setDayLow(snapshot.getDay().getLow());
+                    if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0)
+                        stock.setVolume(snapshot.getDay().getVolume().longValue());
                 }
-
+            } else if ("PRE_MARKET".equals(marketSession) || "AFTER_HOURS".equals(marketSession)) {
+                Double extPrice = resolveExtendedHoursPrice(snapshot, marketSession);
+                if (extPrice != null) stock.setExtendedHoursPrice(extPrice);
                 if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
                         && snapshot.getPrevDay().getClose() > 0) {
                     stock.setPreviousClose(snapshot.getPrevDay().getClose());
+                    if (stock.getCurrentPrice() == null)
+                        stock.setCurrentPrice(snapshot.getPrevDay().getClose());
                 }
-
-                if (snapshot.getDay() != null) {
-                    if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0) {
-                        stock.setDayHigh(snapshot.getDay().getHigh());
-                    }
-                    if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0) {
-                        stock.setDayLow(snapshot.getDay().getLow());
-                    }
-                    if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0) {
-                        stock.setVolume(snapshot.getDay().getVolume().longValue());
-                    }
-                }
-
-                stock.setLastUpdated(LocalDateTime.now());
-                stockRepository.save(stock);
-
-                log.info("Updated price for {} from Massive: ${}", stock.getSymbol(), stock.getCurrentPrice());
             }
+
+            stock.setLastUpdated(LocalDateTime.now());
+            stockRepository.save(stock);
+            log.info("Updated price for {} (session: {}): regular=${}, extended=${}",
+                    stock.getSymbol(), marketSession, stock.getCurrentPrice(), stock.getExtendedHoursPrice());
         } catch (Exception e) {
             log.error("Error updating price for {} from Massive: {}", stock.getSymbol(), e.getMessage());
         }
     }
 
-    private StockQuoteResponse convertSnapshotToQuote(String symbol, MassiveSnapshotTicker snapshot) {
+    private StockQuoteResponse convertSnapshotToQuote(String symbol, MassiveSnapshotTicker snapshot,
+                                                       String marketSession) {
         if (snapshot == null) return null;
 
-        Double currentPrice = resolvePrice(snapshot);
+        Double currentPrice = resolveRegularPrice(snapshot, marketSession);
         if (currentPrice == null) return null;
 
         String name = stockRepository.findBySymbol(symbol).map(Stock::getName).orElse(null);
-        return buildQuoteResponse(symbol, name, currentPrice, snapshot);
+        return buildQuoteResponse(symbol, name, currentPrice, snapshot, marketSession);
     }
 
     /**
-     * Resolves the best available current price from a snapshot.
-     * Priority: lastTrade > min.close (last minute bar) > fmv > day.close
-     * day.close is 0 during trading hours — min.close is the correct intraday source.
+     * Resolves the regular-hours price from a snapshot.
+     * During OPEN: min.close / lastTrade is the live price.
+     * During PRE_MARKET / AFTER_HOURS / CLOSED: prevDay.close is the official regular-session price.
      */
-    private Double resolvePrice(MassiveSnapshotTicker snapshot) {
+    private Double resolveRegularPrice(MassiveSnapshotTicker snapshot, String marketSession) {
+        if ("OPEN".equals(marketSession)) {
+            // Live intraday price
+            if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                    && snapshot.getLastTrade().getPrice() > 0) {
+                return snapshot.getLastTrade().getPrice();
+            }
+            if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
+                    && snapshot.getMin().getClose() > 0) {
+                return snapshot.getMin().getClose();
+            }
+            if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
+                return snapshot.getFmv();
+            }
+            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                    && snapshot.getDay().getClose() > 0) {
+                return snapshot.getDay().getClose();
+            }
+        } else {
+            // Outside regular hours — return last regular-session close
+            if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
+                    && snapshot.getPrevDay().getClose() > 0) {
+                return snapshot.getPrevDay().getClose();
+            }
+            // Fallback: day.close if prevDay unavailable
+            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                    && snapshot.getDay().getClose() > 0) {
+                return snapshot.getDay().getClose();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves the extended-hours price (pre-market or after-hours).
+     * Only meaningful when marketSession is PRE_MARKET or AFTER_HOURS.
+     */
+    private Double resolveExtendedHoursPrice(MassiveSnapshotTicker snapshot, String marketSession) {
+        if (!"PRE_MARKET".equals(marketSession) && !"AFTER_HOURS".equals(marketSession)) {
+            return null;
+        }
         if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
                 && snapshot.getLastTrade().getPrice() > 0) {
             return snapshot.getLastTrade().getPrice();
@@ -275,15 +320,23 @@ public class StockService {
         if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
             return snapshot.getFmv();
         }
-        if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                && snapshot.getDay().getClose() > 0) {
-            return snapshot.getDay().getClose();
-        }
         return null;
     }
 
+    private String resolveMarketSession() {
+        try {
+            return marketCalendar.isHoliday(java.time.LocalDate.now())
+                    ? "HOLIDAY"
+                    : massiveApiService.getDetailedMarketStatus().getOrDefault("status", "CLOSED");
+        } catch (Exception e) {
+            log.warn("Could not determine market session, defaulting to CLOSED");
+            return "CLOSED";
+        }
+    }
+
     private StockQuoteResponse buildQuoteResponse(String symbol, String name,
-                                                   Double currentPrice, MassiveSnapshotTicker snapshot) {
+                                                   Double currentPrice, MassiveSnapshotTicker snapshot,
+                                                   String marketSession) {
         Double previousClose = snapshot.getPrevDay() != null ? snapshot.getPrevDay().getClose() : null;
 
         // Prefer Massive's pre-computed change values; fall back to manual calculation
@@ -305,8 +358,16 @@ public class StockService {
                            && snapshot.getDay().getVolume() > 0
                            ? snapshot.getDay().getVolume() : null;
 
+        Double extendedHoursPrice = resolveExtendedHoursPrice(snapshot, marketSession);
+        Double extendedHoursChange = (extendedHoursPrice != null && currentPrice != null)
+                ? extendedHoursPrice - currentPrice : null;
+        Double extendedHoursChangePercent = (extendedHoursChange != null && currentPrice > 0)
+                ? extendedHoursChange / currentPrice * 100 : null;
+
         return new StockQuoteResponse(symbol, name, currentPrice, change, changePercent,
-                dayHigh, dayLow, dayOpen, previousClose, dayVolume, LocalDateTime.now());
+                dayHigh, dayLow, dayOpen, previousClose, dayVolume,
+                extendedHoursPrice, extendedHoursChange, extendedHoursChangePercent,
+                marketSession, LocalDateTime.now());
     }
 
     private StockResponse mapToStockResponse(Stock stock) {
@@ -334,6 +395,7 @@ public class StockService {
                 stock.getMarketCap(),
                 changeAmount,
                 changePercent,
+                stock.getExtendedHoursPrice(),
                 stock.getIsActive(),
                 stock.getLastUpdated()
         );

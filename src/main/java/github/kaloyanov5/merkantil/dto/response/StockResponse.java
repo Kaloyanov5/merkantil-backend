@@ -25,6 +25,7 @@ public class StockResponse {
     private Double marketCap;
     private Double changeAmount;  // currentPrice - previousClose
     private Double changePercent;  // (changeAmount / previousClose) * 100
+    private Double extendedHoursPrice;
     private Boolean isActive;
     private LocalDateTime lastUpdated;
 }

@@ -59,6 +59,9 @@ public class Stock {
     @Column
     private Double marketCap;
 
+    @Column(name = "extended_hours_price")
+    private Double extendedHoursPrice;
+
     @Column
     private Boolean isActive = true;  // Whether stock is tradeable
 

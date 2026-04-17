@@ -20,5 +20,9 @@ public class StockQuoteResponse {
     private Double open;
     private Double previousClose;
     private Long volume;
+    private Double extendedHoursPrice;
+    private Double extendedHoursChange;
+    private Double extendedHoursChangePercent;
+    private String marketSession;
     private LocalDateTime timestamp;
 }

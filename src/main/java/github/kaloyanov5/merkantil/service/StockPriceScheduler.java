@@ -47,7 +47,13 @@ public class StockPriceScheduler {
     @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updateAllStockPrices() {
         try {
-            log.info("Starting scheduled stock price update for all stocks...");
+            String marketSession = resolveMarketSession();
+            log.info("Starting scheduled stock price update (session: {})...", marketSession);
+
+            if ("CLOSED".equals(marketSession) || "HOLIDAY".equals(marketSession)) {
+                log.debug("Market is {}. Skipping price update.", marketSession);
+                return;
+            }
 
             // Get all active stocks
             List<Stock> allStocks = stockRepository.findAll().stream()
@@ -59,18 +65,29 @@ public class StockPriceScheduler {
                 return;
             }
 
-            log.info("Updating {} stocks in batches of {}", allStocks.size(), BATCH_SIZE);
+            log.info("Updating {} stocks in batches of {} (session: {})",
+                    allStocks.size(), BATCH_SIZE, marketSession);
 
             // Process stocks in batches
             for (int i = 0; i < allStocks.size(); i += BATCH_SIZE) {
                 int end = Math.min(i + BATCH_SIZE, allStocks.size());
                 List<Stock> batch = allStocks.subList(i, end);
-                updateStockBatch(batch);
+                updateStockBatch(batch, marketSession);
             }
 
             log.info("All stock price updates completed");
         } catch (Exception e) {
             log.error("Error in scheduled stock price update: {}", e.getMessage());
+        }
+    }
+
+    private String resolveMarketSession() {
+        try {
+            Map<String, String> status = massiveApiService.getDetailedMarketStatus();
+            return status.getOrDefault("status", "CLOSED");
+        } catch (Exception e) {
+            log.warn("Could not determine market session: {}", e.getMessage());
+            return "CLOSED";
         }
     }
 
@@ -321,7 +338,7 @@ public class StockPriceScheduler {
      * Update a batch of stocks using multiple snapshots (efficient batch API call)
      * Updates both the database AND evicts Redis cache
      */
-    private void updateStockBatch(List<Stock> stocks) {
+    private void updateStockBatch(List<Stock> stocks, String marketSession) {
         try {
             List<String> symbols = stocks.stream()
                     .map(Stock::getSymbol)
@@ -335,7 +352,7 @@ public class StockPriceScheduler {
             for (Stock stock : stocks) {
                 MassiveSnapshotTicker snapshot = snapshots.get(stock.getSymbol());
                 if (snapshot != null) {
-                    updateStockFromSnapshot(stock, snapshot);
+                    updateStockFromSnapshot(stock, snapshot, marketSession);
                 } else {
                     log.warn("No snapshot data for stock: {}", stock.getSymbol());
                 }
@@ -346,9 +363,16 @@ public class StockPriceScheduler {
             log.debug("Updated batch of {} stocks in database", stocks.size());
 
             // Broadcast updated prices to all connected WebSocket clients
-            Map<String, Double> priceUpdate = stocks.stream()
+            Map<String, Object> priceUpdate = stocks.stream()
                     .filter(s -> s.getCurrentPrice() != null)
-                    .collect(Collectors.toMap(Stock::getSymbol, Stock::getCurrentPrice));
+                    .collect(Collectors.toMap(
+                            Stock::getSymbol,
+                            s -> Map.of(
+                                    "price", s.getCurrentPrice(),
+                                    "extendedHoursPrice", s.getExtendedHoursPrice() != null
+                                            ? s.getExtendedHoursPrice() : ""
+                            )
+                    ));
             messagingTemplate.convertAndSend("/topic/prices", priceUpdate);
 
             // Check if any open limit orders can now be filled
@@ -392,43 +416,73 @@ public class StockPriceScheduler {
     }
 
     /**
-     * Update single stock from snapshot.
-     * Guards against zero/null values that occur when the day aggregate
-     * resets at market open before the first trades come in.
+     * Update single stock from snapshot, respecting market session.
+     *
+     * OPEN:        update currentPrice with live intraday price, clear extendedHoursPrice.
+     * PRE_MARKET / AFTER_HOURS: update extendedHoursPrice only; leave currentPrice as
+     *              the last regular-session close so the frontend always has a clean
+     *              "official" price alongside the extended-hours price.
      */
-    private void updateStockFromSnapshot(Stock stock, MassiveSnapshotTicker snapshot) {
-        // Priority: lastTrade.price > min.close (last minute bar) > fmv > day.close
-        // day.close is only populated at end of day by Polygon/Massive — not useful intraday
-        if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
-                && snapshot.getLastTrade().getPrice() > 0) {
-            stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
-        } else if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
-                && snapshot.getMin().getClose() > 0) {
-            stock.setCurrentPrice(snapshot.getMin().getClose());
-        } else if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
-            stock.setCurrentPrice(snapshot.getFmv());
-        } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                && snapshot.getDay().getClose() > 0) {
-            stock.setCurrentPrice(snapshot.getDay().getClose());
+    private void updateStockFromSnapshot(Stock stock, MassiveSnapshotTicker snapshot,
+                                         String marketSession) {
+        if ("OPEN".equals(marketSession)) {
+            // Live regular-hours price — priority: lastTrade > min.close > fmv > day.close
+            if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                    && snapshot.getLastTrade().getPrice() > 0) {
+                stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
+            } else if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
+                    && snapshot.getMin().getClose() > 0) {
+                stock.setCurrentPrice(snapshot.getMin().getClose());
+            } else if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
+                stock.setCurrentPrice(snapshot.getFmv());
+            } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                    && snapshot.getDay().getClose() > 0) {
+                stock.setCurrentPrice(snapshot.getDay().getClose());
+            } else {
+                log.debug("No valid price in snapshot for {}, currentPrice unchanged ({})",
+                        stock.getSymbol(), stock.getCurrentPrice());
+            }
+            // Clear extended-hours price during regular session
+            stock.setExtendedHoursPrice(null);
+
+            if (snapshot.getDay() != null) {
+                if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0) {
+                    stock.setDayHigh(snapshot.getDay().getHigh());
+                }
+                if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0) {
+                    stock.setDayLow(snapshot.getDay().getLow());
+                }
+                if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0) {
+                    stock.setVolume(snapshot.getDay().getVolume().longValue());
+                }
+            }
         } else {
-            log.debug("No valid price in snapshot for {}, currentPrice unchanged ({})",
-                    stock.getSymbol(), stock.getCurrentPrice());
-        }
-
-        if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
-                && snapshot.getPrevDay().getClose() > 0) {
-            stock.setPreviousClose(snapshot.getPrevDay().getClose());
-        }
-
-        if (snapshot.getDay() != null) {
-            if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0) {
-                stock.setDayHigh(snapshot.getDay().getHigh());
+            // PRE_MARKET or AFTER_HOURS — update extended price only, leave currentPrice intact
+            Double extPrice = null;
+            if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
+                    && snapshot.getLastTrade().getPrice() > 0) {
+                extPrice = snapshot.getLastTrade().getPrice();
+            } else if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
+                    && snapshot.getMin().getClose() > 0) {
+                extPrice = snapshot.getMin().getClose();
+            } else if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
+                extPrice = snapshot.getFmv();
             }
-            if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0) {
-                stock.setDayLow(snapshot.getDay().getLow());
+
+            if (extPrice != null) {
+                stock.setExtendedHoursPrice(extPrice);
+                log.debug("Extended hours price for {}: {} (session: {})",
+                        stock.getSymbol(), extPrice, marketSession);
             }
-            if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0) {
-                stock.setVolume(snapshot.getDay().getVolume().longValue());
+
+            // Keep previousClose up to date from prevDay
+            if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
+                    && snapshot.getPrevDay().getClose() > 0) {
+                stock.setPreviousClose(snapshot.getPrevDay().getClose());
+                // If currentPrice was never set (fresh DB), seed it from prevDay
+                if (stock.getCurrentPrice() == null) {
+                    stock.setCurrentPrice(snapshot.getPrevDay().getClose());
+                }
             }
         }
 
@@ -443,6 +497,8 @@ public class StockPriceScheduler {
     public void updatePricesNow() {
         log.info("Manual price update triggered");
 
+        String marketSession = resolveMarketSession();
+
         List<Stock> allStocks = stockRepository.findAll().stream()
                 .filter(s -> s.getIsActive() != null && s.getIsActive())
                 .collect(Collectors.toList());
@@ -455,7 +511,7 @@ public class StockPriceScheduler {
         for (int i = 0; i < allStocks.size(); i += BATCH_SIZE) {
             int end = Math.min(i + BATCH_SIZE, allStocks.size());
             List<Stock> batch = allStocks.subList(i, end);
-            updateStockBatch(batch);
+            updateStockBatch(batch, marketSession);
         }
 
         log.info("Manual price update completed for {} stocks", allStocks.size());
