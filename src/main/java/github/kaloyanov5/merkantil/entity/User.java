@@ -56,6 +56,9 @@ public class User {
     @Column(nullable = false)
     private Boolean banned = false;
 
+    @Column(name = "google_id", unique = true)
+    private String googleId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;
