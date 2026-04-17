@@ -235,11 +235,17 @@ public class StockService {
             } else if ("PRE_MARKET".equals(marketSession) || "AFTER_HOURS".equals(marketSession)) {
                 Double extPrice = resolveExtendedHoursPrice(snapshot, marketSession);
                 if (extPrice != null) stock.setExtendedHoursPrice(extPrice);
+                // Sync currentPrice with official regular-session close
+                if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                        && snapshot.getDay().getClose() > 0) {
+                    stock.setCurrentPrice(snapshot.getDay().getClose());
+                } else if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
+                        && snapshot.getPrevDay().getClose() > 0) {
+                    stock.setCurrentPrice(snapshot.getPrevDay().getClose());
+                }
                 if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
                         && snapshot.getPrevDay().getClose() > 0) {
                     stock.setPreviousClose(snapshot.getPrevDay().getClose());
-                    if (stock.getCurrentPrice() == null)
-                        stock.setCurrentPrice(snapshot.getPrevDay().getClose());
                 }
             }
 

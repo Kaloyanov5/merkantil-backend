@@ -475,14 +475,22 @@ public class StockPriceScheduler {
                         stock.getSymbol(), extPrice, marketSession);
             }
 
+            // Sync currentPrice with the official regular-session close.
+            // During AFTER_HOURS: day.close is today's official close (fixes drift
+            // from the last intraday tick that may differ from the closing auction).
+            // During PRE_MARKET: day.close may be 0 (no trading yet), so fall back to prevDay.close.
+            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
+                    && snapshot.getDay().getClose() > 0) {
+                stock.setCurrentPrice(snapshot.getDay().getClose());
+            } else if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
+                    && snapshot.getPrevDay().getClose() > 0) {
+                stock.setCurrentPrice(snapshot.getPrevDay().getClose());
+            }
+
             // Keep previousClose up to date from prevDay
             if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
                     && snapshot.getPrevDay().getClose() > 0) {
                 stock.setPreviousClose(snapshot.getPrevDay().getClose());
-                // If currentPrice was never set (fresh DB), seed it from prevDay
-                if (stock.getCurrentPrice() == null) {
-                    stock.setCurrentPrice(snapshot.getPrevDay().getClose());
-                }
             }
         }
 
