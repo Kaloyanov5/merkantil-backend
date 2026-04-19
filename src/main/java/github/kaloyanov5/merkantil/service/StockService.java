@@ -45,7 +45,7 @@ public class StockService {
                 ? Sort.Direction.ASC
                 : Sort.Direction.DESC;
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sortBy));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(sortDirection, sortBy));
 
         return stockRepository.findByIsActiveTrue(pageable)
                 .map(this::mapToStockResponse);
@@ -98,7 +98,7 @@ public class StockService {
      * Search stocks
      */
     public Page<StockResponse> searchStocks(String query, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100));
 
         return stockRepository.findBySymbolContainingIgnoreCaseOrNameContainingIgnoreCase(
                         query, query, pageable)
@@ -109,7 +109,7 @@ public class StockService {
      * Get stocks by sector
      */
     public Page<StockResponse> getStocksBySector(String sector, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "marketCap"));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "marketCap"));
 
         return stockRepository.findBySector(sector, pageable)
                 .map(this::mapToStockResponse);

@@ -52,19 +52,21 @@ public class PortfolioGrowthService {
                 tradingDays.size(), tradingDays.get(0), tradingDays.get(tradingDays.size() - 1));
 
         List<PortfolioGrowthResponse> growthData = new ArrayList<>();
+        Double lastKnownValue = 0.0;
 
         // Step 2: For each trading day, reconstruct portfolio value
         for (LocalDate date : tradingDays) {
             try {
                 Double portfolioValue = reconstructPortfolioValueForDate(userId, date);
+                lastKnownValue = portfolioValue;
                 growthData.add(new PortfolioGrowthResponse(date, portfolioValue));
 
                 log.debug("Date: {} | Portfolio Value: ${}", date,
                         String.format("%.2f", portfolioValue));
             } catch (Exception e) {
                 log.error("Error calculating portfolio value for date {}: {}", date, e.getMessage());
-                // On error, use 0.0 to maintain data continuity
-                growthData.add(new PortfolioGrowthResponse(date, 0.0));
+                // Carry forward last known value to avoid false $0 cliffs
+                growthData.add(new PortfolioGrowthResponse(date, lastKnownValue));
             }
         }
 
@@ -236,14 +238,16 @@ public class PortfolioGrowthService {
 
         List<LocalDate> tradingDays = getTradingDaysInRange(startDate, endDate);
         List<PortfolioGrowthResponse> growthData = new ArrayList<>();
+        Double lastKnownValue = 0.0;
 
         for (LocalDate date : tradingDays) {
             try {
                 Double portfolioValue = reconstructPortfolioValueForDate(userId, date);
+                lastKnownValue = portfolioValue;
                 growthData.add(new PortfolioGrowthResponse(date, portfolioValue));
             } catch (Exception e) {
                 log.error("Error calculating portfolio value for date {}: {}", date, e.getMessage());
-                growthData.add(new PortfolioGrowthResponse(date, 0.0));
+                growthData.add(new PortfolioGrowthResponse(date, lastKnownValue));
             }
         }
 

@@ -25,7 +25,7 @@ public class TransactionService {
      * Get user's transaction history
      */
     public Page<TransactionResponse> getUserTransactions(Long userId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "timestamp"));
         Page<Transaction> transactions = transactionRepository.findByUserId(userId, pageable);
 
         return transactions.map(this::mapToTransactionResponse);
@@ -35,7 +35,7 @@ public class TransactionService {
      * Get transactions by type (BUY/SELL)
      */
     public Page<TransactionResponse> getUserTransactionsByType(Long userId, String type, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "timestamp"));
         Side side = Side.valueOf(type.toUpperCase());
         Page<Transaction> transactions = transactionRepository.findByUserIdAndType(userId, side, pageable);
 
