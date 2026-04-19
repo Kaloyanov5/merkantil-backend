@@ -38,6 +38,10 @@ public class OrderService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
+        if (Boolean.TRUE.equals(user.getBanned())) {
+            throw new IllegalArgumentException("Your account has been suspended");
+        }
+
         Stock stock = stockRepository.findBySymbol(request.getSymbol().toUpperCase())
                 .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + request.getSymbol()));
 
@@ -397,7 +401,7 @@ public class OrderService {
      * Get user's order history
      */
     public Page<OrderResponse> getUserOrders(Long userId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "timestamp"));
         return orderRepository.findByUserId(userId, pageable).map(this::mapToOrderResponse);
     }
 
@@ -405,7 +409,7 @@ public class OrderService {
      * Get orders by symbol
      */
     public Page<OrderResponse> getUserOrdersBySymbol(Long userId, String symbol, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "timestamp"));
         return orderRepository.findByUserIdAndSymbol(userId, symbol, pageable).map(this::mapToOrderResponse);
     }
 

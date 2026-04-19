@@ -25,8 +25,8 @@ import org.springframework.security.web.authentication.rememberme.PersistentToke
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -42,6 +42,8 @@ public class AuthService {
     private final EmailService emailService;
     private final StringRedisTemplate redisTemplate;
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     private static final String VERIFY_PREFIX = "email:verify:";
     private static final Duration VERIFY_TTL = Duration.ofHours(24);
 
@@ -51,6 +53,10 @@ public class AuthService {
     private static final String TWO_FA_OTP_PREFIX = "2fa:otp:";
     private static final String TWO_FA_PENDING_PREFIX = "2fa:pending:";
     private static final Duration TWO_FA_TTL = Duration.ofMinutes(5);
+
+    private static final String ATTEMPT_PREFIX = "auth:attempts:";
+    private static final int MAX_ATTEMPTS = 5;
+    private static final Duration ATTEMPT_WINDOW = Duration.ofMinutes(15);
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -83,13 +89,20 @@ public class AuthService {
 
         // If 2FA is enabled, send OTP and pause login — session not created yet
         if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
-            String code = String.format("%06d", new Random().nextInt(1_000_000));
+            String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
             String tempToken = UUID.randomUUID().toString();
             redisTemplate.opsForValue().set(TWO_FA_OTP_PREFIX + user.getId(), code, TWO_FA_TTL);
             redisTemplate.opsForValue().set(TWO_FA_PENDING_PREFIX + tempToken, user.getId().toString(), TWO_FA_TTL);
             emailService.send2faEmail(user.getEmail(), code);
             throw new TwoFactorRequiredException(tempToken);
         }
+
+        // Rotate session ID to prevent session fixation
+        jakarta.servlet.http.HttpSession oldSession = httpRequest.getSession(false);
+        if (oldSession != null) {
+            oldSession.invalidate();
+        }
+        httpRequest.getSession(true);
 
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);
@@ -139,8 +152,12 @@ public class AuthService {
         if (userId == null) {
             throw new IllegalArgumentException("Invalid or expired session, please log in again");
         }
+
+        checkRateLimit("2fa:" + userId);
+
         String storedCode = redisTemplate.opsForValue().get(TWO_FA_OTP_PREFIX + userId);
         if (storedCode == null || !storedCode.equals(code)) {
+            incrementAttempts("2fa:" + userId);
             throw new IllegalArgumentException("Invalid or expired code");
         }
 
@@ -159,6 +176,7 @@ public class AuthService {
 
         redisTemplate.delete(TWO_FA_PENDING_PREFIX + tempToken);
         redisTemplate.delete(TWO_FA_OTP_PREFIX + userId);
+        redisTemplate.delete(ATTEMPT_PREFIX + "2fa:" + userId);
 
         return new AuthResponse("Login successful", mapToUserResponse(user));
     }
@@ -182,16 +200,19 @@ public class AuthService {
         if (!userRepository.existsByEmail(email)) {
             return;
         }
-        String code = String.format("%06d", new Random().nextInt(1_000_000));
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
         redisTemplate.opsForValue().set(RESET_PREFIX + email, code, RESET_TTL);
         emailService.sendPasswordResetEmail(email, code);
     }
 
     @Transactional
     public void resetPassword(String email, String code, String newPassword) {
+        checkRateLimit("reset:" + email);
+
         String key = RESET_PREFIX + email;
         String storedCode = redisTemplate.opsForValue().get(key);
         if (storedCode == null || !storedCode.equals(code)) {
+            incrementAttempts("reset:" + email);
             throw new IllegalArgumentException("Invalid or expired reset code");
         }
         User user = userRepository.findByEmail(email)
@@ -199,6 +220,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
         redisTemplate.delete(key);
+        redisTemplate.delete(ATTEMPT_PREFIX + "reset:" + email);
     }
 
     @Transactional
@@ -213,6 +235,22 @@ public class AuthService {
         user.setEmailVerified(true);
         userRepository.save(user);
         redisTemplate.delete(key);
+    }
+
+    private void checkRateLimit(String identifier) {
+        String key = ATTEMPT_PREFIX + identifier;
+        String attempts = redisTemplate.opsForValue().get(key);
+        if (attempts != null && Integer.parseInt(attempts) >= MAX_ATTEMPTS) {
+            throw new IllegalArgumentException("Too many attempts. Please try again later.");
+        }
+    }
+
+    private void incrementAttempts(String identifier) {
+        String key = ATTEMPT_PREFIX + identifier;
+        Long count = redisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1) {
+            redisTemplate.expire(key, ATTEMPT_WINDOW);
+        }
     }
 
     private UserResponse mapToUserResponse(User user) {

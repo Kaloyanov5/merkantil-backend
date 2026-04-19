@@ -79,12 +79,12 @@ public class UserService {
         Sort.Direction sortDirection = direction.equalsIgnoreCase("ASC")
                 ? Sort.Direction.ASC
                 : Sort.Direction.DESC;
-        Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sortBy));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(sortDirection, sortBy));
         return userRepository.findAll(pageable).map(this::mapToUserResponse);
     }
 
     public Page<UserResponse> searchUsers(String query, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
         return userRepository.findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
                 query, query, query, pageable).map(this::mapToUserResponse);
     }
@@ -106,6 +106,10 @@ public class UserService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (Boolean.TRUE.equals(user.getBanned())) {
+            throw new IllegalArgumentException("Your account has been suspended");
+        }
 
         PaymentMethod paymentMethod = null;
         if (paymentMethodId != null) {
@@ -143,6 +147,10 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
+        if (Boolean.TRUE.equals(user.getBanned())) {
+            throw new IllegalArgumentException("Your account has been suspended");
+        }
+
         if (user.getBalance().compareTo(amount) < 0) {
             throw new IllegalArgumentException("Insufficient funds");
         }
@@ -167,6 +175,10 @@ public class UserService {
 
         User sender = userRepository.findById(senderId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (Boolean.TRUE.equals(sender.getBanned())) {
+            throw new IllegalArgumentException("Your account has been suspended");
+        }
 
         User recipient = userRepository.findByEmail(request.getRecipientEmail())
                 .orElseThrow(() -> new IllegalArgumentException("Recipient not found"));
@@ -213,7 +225,7 @@ public class UserService {
     }
 
     public Page<WalletTransactionResponse> getWalletHistory(Long userId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, Math.min(size, 100));
         return walletTransactionRepository.findByUserIdOrderByTimestampDesc(userId, pageable)
                 .map(tx -> new WalletTransactionResponse(
                         tx.getId(),
