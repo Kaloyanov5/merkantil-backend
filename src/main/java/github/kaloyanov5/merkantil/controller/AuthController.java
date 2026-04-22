@@ -7,7 +7,6 @@ import github.kaloyanov5.merkantil.dto.request.LoginRequest;
 import github.kaloyanov5.merkantil.dto.request.RegisterRequest;
 import github.kaloyanov5.merkantil.dto.request.ResetPasswordRequest;
 import github.kaloyanov5.merkantil.dto.request.TwoFactorVerifyRequest;
-import github.kaloyanov5.merkantil.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -57,18 +56,8 @@ public class AuthController {
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest,
                                    HttpServletResponse httpResponse
     ) {
-        try {
-            AuthResponse response = authService.login(request, httpRequest, httpResponse);
-            return ResponseEntity.ok(response);
-        } catch (TwoFactorRequiredException e) {
-            return ResponseEntity.ok(Map.of(
-                    "twoFactorRequired", true,
-                    "tempToken", e.getTempToken()
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Invalid email or password"));
-        }
+        AuthResponse response = authService.login(request, httpRequest, httpResponse);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/verify-2fa")

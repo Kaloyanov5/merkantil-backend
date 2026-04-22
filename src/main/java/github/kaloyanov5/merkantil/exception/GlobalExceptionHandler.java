@@ -68,6 +68,16 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(RateLimitedException.class)
+    public ResponseEntity<Map<String, Object>> handleRateLimited(RateLimitedException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.getRetryAfterSeconds()))
+                .body(Map.of(
+                        "error", e.getMessage(),
+                        "retryAfterSeconds", e.getRetryAfterSeconds()
+                ));
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> handleNoResource(NoResourceFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

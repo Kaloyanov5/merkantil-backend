@@ -1,6 +1,7 @@
 package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.entity.User;
+import github.kaloyanov5.merkantil.exception.RateLimitedException;
 import github.kaloyanov5.merkantil.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.repository.UserRepository;
 import github.kaloyanov5.merkantil.dto.response.AuthResponse;
@@ -15,6 +16,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -79,9 +81,21 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
-        );
+        String rateKey = "login:" + request.getEmail().toLowerCase();
+        checkRateLimit(rateKey);
+
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+            );
+        } catch (BadCredentialsException e) {
+            incrementAttempts(rateKey);
+            throw e;
+        }
+
+        // Password was correct — clear attempts even if 2FA is still pending
+        redisTemplate.delete(ATTEMPT_PREFIX + rateKey);
 
         CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
         User user = userRepository.findById(principal.getId())
@@ -241,7 +255,8 @@ public class AuthService {
         String key = ATTEMPT_PREFIX + identifier;
         String attempts = redisTemplate.opsForValue().get(key);
         if (attempts != null && Integer.parseInt(attempts) >= MAX_ATTEMPTS) {
-            throw new IllegalArgumentException("Too many attempts. Please try again later.");
+            Long ttl = redisTemplate.getExpire(key, java.util.concurrent.TimeUnit.SECONDS);
+            throw new RateLimitedException(ttl != null && ttl > 0 ? ttl : 0);
         }
     }
 

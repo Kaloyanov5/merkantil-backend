@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Value;
 
 import javax.sql.DataSource;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -48,6 +49,9 @@ public class SecurityConfig {
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
+
+    @Value("${app.cors.allowed-origins}")
+    private List<String> allowedOrigins;
 
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
@@ -85,9 +89,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:5173"));
+        configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setExposedHeaders(Arrays.asList("Retry-After"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
