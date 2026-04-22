@@ -95,6 +95,9 @@ public class UserService {
         return new BalanceResponse(user.getId(), user.getBalance());
     }
 
+    private static final BigDecimal MAX_DEPOSIT = BigDecimal.valueOf(25_000);
+    private static final BigDecimal MAX_WITHDRAWAL = BigDecimal.valueOf(10_000);
+
     @Transactional
     public BalanceResponse deposit(Long userId, BigDecimal amount, Long currentUserId, Long paymentMethodId) {
         if (!userId.equals(currentUserId)) {
@@ -102,6 +105,9 @@ public class UserService {
         }
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Deposit amount must be positive");
+        }
+        if (amount.compareTo(MAX_DEPOSIT) > 0) {
+            throw new IllegalArgumentException("Deposit amount cannot exceed $25,000 per transaction");
         }
 
         User user = userRepository.findById(userId)
@@ -142,6 +148,9 @@ public class UserService {
         }
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Withdrawal amount must be positive");
+        }
+        if (amount.compareTo(MAX_WITHDRAWAL) > 0) {
+            throw new IllegalArgumentException("Withdrawal amount cannot exceed $10,000 per transaction");
         }
 
         User user = userRepository.findById(userId)
