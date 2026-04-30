@@ -293,5 +293,3 @@ Bug reports and feature ideas are welcome — please include reproduction steps,
 Copyright 2026 Bozhidar Kaloyanov
 
 The source code in this repository is licensed under the **Apache License, Version 2.0** — see the [LICENSE](LICENSE) and [NOTICE](NOTICE) files. You can obtain a copy of the license at <http://www.apache.org/licenses/LICENSE-2.0>.
-
-> **"Merkantil"** and the Merkantil name and branding are unregistered trademarks of Bozhidar Kaloyanov. The Apache 2.0 license covers the source code only and does not grant rights to use the project name, logo, or branding (Apache 2.0, Section 6). If you fork or build on this codebase, please pick a different name for your derivative.
