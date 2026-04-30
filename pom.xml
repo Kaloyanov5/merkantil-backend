@@ -15,10 +15,16 @@
 	<description>Demo Trading Platform</description>
 	<url/>
 	<licenses>
-		<license/>
+		<license>
+			<name>Apache License, Version 2.0</name>
+			<url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+			<distribution>repo</distribution>
+		</license>
 	</licenses>
 	<developers>
-		<developer/>
+		<developer>
+			<name>Bozhidar Kaloyanov</name>
+		</developer>
 	</developers>
 	<scm>
 		<connection/>
