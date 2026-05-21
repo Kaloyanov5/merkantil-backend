@@ -180,7 +180,7 @@ public class StockImportService {
     }
 
     /**
-     * Basic sector guessing (will change it!!!!!)
+     * Basic sector guessing fallback
      */
     private String guessSector(String symbol) {
         // basic guess
