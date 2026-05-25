@@ -93,10 +93,9 @@ class OrderServiceTest {
     }
 
     private void stubMarketPrice(double price) {
-        MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker();
-        MassiveLastTrade lastTrade = new MassiveLastTrade();
-        lastTrade.setPrice(price);
-        snapshot.setLastTrade(lastTrade);
+        MassiveLastTrade lastTrade = new MassiveLastTrade(price, null, null, null, null, null);
+        MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
+                "AAPL", null, null, null, lastTrade, null, null, null, null, null);
         when(massiveApiService.getSnapshot("AAPL")).thenReturn(snapshot);
     }
 

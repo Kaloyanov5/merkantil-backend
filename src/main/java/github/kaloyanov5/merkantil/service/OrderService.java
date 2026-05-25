@@ -411,13 +411,13 @@ public class OrderService {
         MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
 
         if (snapshot != null) {
-            if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
-                    && snapshot.getLastTrade().getPrice() > 0) {
-                return MoneyUtil.of(snapshot.getLastTrade().getPrice());
+            if (snapshot.lastTrade() != null && snapshot.lastTrade().price() != null
+                    && snapshot.lastTrade().price() > 0) {
+                return MoneyUtil.of(snapshot.lastTrade().price());
             }
-            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                    && snapshot.getDay().getClose() > 0) {
-                return MoneyUtil.of(snapshot.getDay().getClose());
+            if (snapshot.day() != null && snapshot.day().close() != null
+                    && snapshot.day().close() > 0) {
+                return MoneyUtil.of(snapshot.day().close());
             }
         }
 

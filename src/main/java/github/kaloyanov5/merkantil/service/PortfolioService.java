@@ -91,8 +91,8 @@ public class PortfolioService {
 
         // Fallback to Massive API
         MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(symbol);
-        if (snapshot != null && snapshot.getLastTrade() != null) {
-            return MoneyUtil.of(snapshot.getLastTrade().getPrice());
+        if (snapshot != null && snapshot.lastTrade() != null) {
+            return MoneyUtil.of(snapshot.lastTrade().price());
         }
 
         log.warn("Unable to fetch current price for {}", symbol);

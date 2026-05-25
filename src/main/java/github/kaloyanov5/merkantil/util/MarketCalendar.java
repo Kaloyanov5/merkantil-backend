@@ -26,8 +26,8 @@ public class MarketCalendar {
     public void loadHolidays() {
         holidays.clear();
         massiveApiService.getUpcomingHolidays().stream()
-                .filter(h -> "NYSE".equals(h.getExchange()) && "closed".equals(h.getStatus()))
-                .map(h -> LocalDate.parse(h.getDate()))
+                .filter(h -> "NYSE".equals(h.exchange()) && "closed".equals(h.status()))
+                .map(h -> LocalDate.parse(h.date()))
                 .forEach(holidays::add);
 
         log.info("MarketCalendar: loaded {} holidays from Massive API", holidays.size());

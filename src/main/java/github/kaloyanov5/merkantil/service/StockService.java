@@ -173,12 +173,12 @@ public class StockService {
 
         return bars.stream()
                 .map(bar -> new StockHistoryResponse(
-                        MassiveApiService.millisToLocalDate(bar.getTimestamp()),
-                        MoneyUtil.of(bar.getOpen()),
-                        MoneyUtil.of(bar.getHigh()),
-                        MoneyUtil.of(bar.getLow()),
-                        MoneyUtil.of(bar.getClose()),
-                        bar.getVolume()
+                        MassiveApiService.millisToLocalDate(bar.timestamp()),
+                        MoneyUtil.of(bar.open()),
+                        MoneyUtil.of(bar.high()),
+                        MoneyUtil.of(bar.low()),
+                        MoneyUtil.of(bar.close()),
+                        bar.volume()
                 ))
                 .collect(Collectors.toList());
     }
@@ -227,28 +227,28 @@ public class StockService {
                 BigDecimal price = resolveRegularPrice(snapshot, marketSession);
                 if (price != null) stock.setCurrentPrice(price);
                 stock.setExtendedHoursPrice(null);
-                if (snapshot.getDay() != null) {
-                    if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0)
-                        stock.setDayHigh(MoneyUtil.of(snapshot.getDay().getHigh()));
-                    if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0)
-                        stock.setDayLow(MoneyUtil.of(snapshot.getDay().getLow()));
-                    if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0)
-                        stock.setVolume(snapshot.getDay().getVolume().longValue());
+                if (snapshot.day() != null) {
+                    if (snapshot.day().high() != null && snapshot.day().high() > 0)
+                        stock.setDayHigh(MoneyUtil.of(snapshot.day().high()));
+                    if (snapshot.day().low() != null && snapshot.day().low() > 0)
+                        stock.setDayLow(MoneyUtil.of(snapshot.day().low()));
+                    if (snapshot.day().volume() != null && snapshot.day().volume() > 0)
+                        stock.setVolume(snapshot.day().volume().longValue());
                 }
             } else if ("PRE_MARKET".equals(marketSession) || "AFTER_HOURS".equals(marketSession)) {
                 BigDecimal extPrice = resolveExtendedHoursPrice(snapshot, marketSession);
                 if (extPrice != null) stock.setExtendedHoursPrice(extPrice);
                 // Sync currentPrice with official regular-session close
-                if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                        && snapshot.getDay().getClose() > 0) {
-                    stock.setCurrentPrice(MoneyUtil.of(snapshot.getDay().getClose()));
-                } else if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
-                        && snapshot.getPrevDay().getClose() > 0) {
-                    stock.setCurrentPrice(MoneyUtil.of(snapshot.getPrevDay().getClose()));
+                if (snapshot.day() != null && snapshot.day().close() != null
+                        && snapshot.day().close() > 0) {
+                    stock.setCurrentPrice(MoneyUtil.of(snapshot.day().close()));
+                } else if (snapshot.prevDay() != null && snapshot.prevDay().close() != null
+                        && snapshot.prevDay().close() > 0) {
+                    stock.setCurrentPrice(MoneyUtil.of(snapshot.prevDay().close()));
                 }
-                if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
-                        && snapshot.getPrevDay().getClose() > 0) {
-                    stock.setPreviousClose(MoneyUtil.of(snapshot.getPrevDay().getClose()));
+                if (snapshot.prevDay() != null && snapshot.prevDay().close() != null
+                        && snapshot.prevDay().close() > 0) {
+                    stock.setPreviousClose(MoneyUtil.of(snapshot.prevDay().close()));
                 }
             }
 
@@ -280,31 +280,31 @@ public class StockService {
     private BigDecimal resolveRegularPrice(MassiveSnapshotTicker snapshot, String marketSession) {
         if ("OPEN".equals(marketSession)) {
             // Live intraday price
-            if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
-                    && snapshot.getLastTrade().getPrice() > 0) {
-                return MoneyUtil.of(snapshot.getLastTrade().getPrice());
+            if (snapshot.lastTrade() != null && snapshot.lastTrade().price() != null
+                    && snapshot.lastTrade().price() > 0) {
+                return MoneyUtil.of(snapshot.lastTrade().price());
             }
-            if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
-                    && snapshot.getMin().getClose() > 0) {
-                return MoneyUtil.of(snapshot.getMin().getClose());
+            if (snapshot.min() != null && snapshot.min().close() != null
+                    && snapshot.min().close() > 0) {
+                return MoneyUtil.of(snapshot.min().close());
             }
-            if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
-                return MoneyUtil.of(snapshot.getFmv());
+            if (snapshot.fmv() != null && snapshot.fmv() > 0) {
+                return MoneyUtil.of(snapshot.fmv());
             }
-            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                    && snapshot.getDay().getClose() > 0) {
-                return MoneyUtil.of(snapshot.getDay().getClose());
+            if (snapshot.day() != null && snapshot.day().close() != null
+                    && snapshot.day().close() > 0) {
+                return MoneyUtil.of(snapshot.day().close());
             }
         } else {
             // Outside regular hours — return last regular-session close
-            if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
-                    && snapshot.getPrevDay().getClose() > 0) {
-                return MoneyUtil.of(snapshot.getPrevDay().getClose());
+            if (snapshot.prevDay() != null && snapshot.prevDay().close() != null
+                    && snapshot.prevDay().close() > 0) {
+                return MoneyUtil.of(snapshot.prevDay().close());
             }
             // Fallback: day.close if prevDay unavailable
-            if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
-                    && snapshot.getDay().getClose() > 0) {
-                return MoneyUtil.of(snapshot.getDay().getClose());
+            if (snapshot.day() != null && snapshot.day().close() != null
+                    && snapshot.day().close() > 0) {
+                return MoneyUtil.of(snapshot.day().close());
             }
         }
         return null;
@@ -318,16 +318,16 @@ public class StockService {
         if (!"PRE_MARKET".equals(marketSession) && !"AFTER_HOURS".equals(marketSession)) {
             return null;
         }
-        if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
-                && snapshot.getLastTrade().getPrice() > 0) {
-            return MoneyUtil.of(snapshot.getLastTrade().getPrice());
+        if (snapshot.lastTrade() != null && snapshot.lastTrade().price() != null
+                && snapshot.lastTrade().price() > 0) {
+            return MoneyUtil.of(snapshot.lastTrade().price());
         }
-        if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
-                && snapshot.getMin().getClose() > 0) {
-            return MoneyUtil.of(snapshot.getMin().getClose());
+        if (snapshot.min() != null && snapshot.min().close() != null
+                && snapshot.min().close() > 0) {
+            return MoneyUtil.of(snapshot.min().close());
         }
-        if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
-            return MoneyUtil.of(snapshot.getFmv());
+        if (snapshot.fmv() != null && snapshot.fmv() > 0) {
+            return MoneyUtil.of(snapshot.fmv());
         }
         return null;
     }
@@ -335,27 +335,27 @@ public class StockService {
     private StockQuoteResponse buildQuoteResponse(String symbol, String name,
                                                    BigDecimal currentPrice, MassiveSnapshotTicker snapshot,
                                                    String marketSession) {
-        BigDecimal previousClose = snapshot.getPrevDay() != null
-                ? MoneyUtil.of(snapshot.getPrevDay().getClose()) : null;
+        BigDecimal previousClose = snapshot.prevDay() != null
+                ? MoneyUtil.of(snapshot.prevDay().close()) : null;
 
         // Prefer Massive's pre-computed change values; fall back to manual calculation
-        BigDecimal change = snapshot.getTodaysChange() != null
-                ? MoneyUtil.of(snapshot.getTodaysChange())
+        BigDecimal change = snapshot.todaysChange() != null
+                ? MoneyUtil.of(snapshot.todaysChange())
                 : (previousClose != null ? currentPrice.subtract(previousClose) : null);
-        Double changePercent = snapshot.getTodaysChangePerc() != null
-                ? snapshot.getTodaysChangePerc()
+        Double changePercent = snapshot.todaysChangePerc() != null
+                ? snapshot.todaysChangePerc()
                 : (MoneyUtil.isPositive(previousClose) ? percentOf(currentPrice.subtract(previousClose), previousClose) : null);
 
         // day OHLV fields are 0 during pre/after-hours — return null instead of 0
-        BigDecimal dayHigh = snapshot.getDay() != null && snapshot.getDay().getHigh() != null
-                             && snapshot.getDay().getHigh() > 0 ? MoneyUtil.of(snapshot.getDay().getHigh()) : null;
-        BigDecimal dayLow  = snapshot.getDay() != null && snapshot.getDay().getLow() != null
-                             && snapshot.getDay().getLow() > 0 ? MoneyUtil.of(snapshot.getDay().getLow()) : null;
-        BigDecimal dayOpen = snapshot.getDay() != null && snapshot.getDay().getOpen() != null
-                             && snapshot.getDay().getOpen() > 0 ? MoneyUtil.of(snapshot.getDay().getOpen()) : null;
-        Long   dayVolume = snapshot.getDay() != null && snapshot.getDay().getVolume() != null
-                           && snapshot.getDay().getVolume() > 0
-                           ? snapshot.getDay().getVolume() : null;
+        BigDecimal dayHigh = snapshot.day() != null && snapshot.day().high() != null
+                             && snapshot.day().high() > 0 ? MoneyUtil.of(snapshot.day().high()) : null;
+        BigDecimal dayLow  = snapshot.day() != null && snapshot.day().low() != null
+                             && snapshot.day().low() > 0 ? MoneyUtil.of(snapshot.day().low()) : null;
+        BigDecimal dayOpen = snapshot.day() != null && snapshot.day().open() != null
+                             && snapshot.day().open() > 0 ? MoneyUtil.of(snapshot.day().open()) : null;
+        Long   dayVolume = snapshot.day() != null && snapshot.day().volume() != null
+                           && snapshot.day().volume() > 0
+                           ? snapshot.day().volume() : null;
 
         BigDecimal extendedHoursPrice = resolveExtendedHoursPrice(snapshot, marketSession);
         BigDecimal extendedHoursChange = (extendedHoursPrice != null && currentPrice != null)

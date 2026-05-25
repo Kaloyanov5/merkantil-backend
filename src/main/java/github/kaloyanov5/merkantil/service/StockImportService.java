@@ -41,9 +41,9 @@ public class StockImportService {
         for (MassiveTickerDetail asset : assets) {
             try {
                 // Only import active stocks with valid data
-                if (asset.getActive() != null && asset.getActive()
-                        && asset.getTicker() != null && !asset.getTicker().isBlank()
-                        && asset.getName() != null && !asset.getName().isBlank()) {
+                if (asset.active() != null && asset.active()
+                        && asset.ticker() != null && !asset.ticker().isBlank()
+                        && asset.name() != null && !asset.name().isBlank()) {
                     boolean isNew = importStock(asset);
                     if (isNew) {
                         imported++;
@@ -54,7 +54,7 @@ public class StockImportService {
                     skipped++;
                 }
             } catch (Exception e) {
-                log.error("Error importing stock {}: {}", asset.getTicker(), e.getMessage());
+                log.error("Error importing stock {}: {}", asset.ticker(), e.getMessage());
                 skipped++;
             }
         }
@@ -95,7 +95,7 @@ public class StockImportService {
             String symbol = topStocks[i];
             try {
                 MassiveTickerDetail asset = massiveApiService.getAsset(symbol);
-                if (asset != null && Boolean.TRUE.equals(asset.getActive())) {
+                if (asset != null && Boolean.TRUE.equals(asset.active())) {
                     importStock(asset);
                     imported++;
                 } else {
@@ -126,7 +126,7 @@ public class StockImportService {
             return SingleImportResult.FAILED;
         }
 
-        if (asset.getActive() == null || !asset.getActive()) {
+        if (asset.active() == null || !asset.active()) {
             log.error("Stock {} is not active", symbol);
             return SingleImportResult.FAILED;
         }
@@ -143,33 +143,33 @@ public class StockImportService {
      */
     @Transactional
     public boolean importStock(MassiveTickerDetail asset) {
-        if (asset.getTicker() == null || asset.getTicker().isBlank()
-                || asset.getName() == null || asset.getName().isBlank()) {
-            log.debug("Skipping stock with missing ticker or name: {}", asset.getTicker());
+        if (asset.ticker() == null || asset.ticker().isBlank()
+                || asset.name() == null || asset.name().isBlank()) {
+            log.debug("Skipping stock with missing ticker or name: {}", asset.ticker());
             return false;
         }
 
-        Stock stock = stockRepository.findBySymbol(asset.getTicker())
+        Stock stock = stockRepository.findBySymbol(asset.ticker())
                 .orElse(new Stock());
 
         boolean isNew = stock.getId() == null;
 
-        stock.setSymbol(asset.getTicker());
-        stock.setName(asset.getName());
-        stock.setExchange(MassiveApiService.mapExchangeCode(asset.getPrimaryExchange()));
-        stock.setCurrency(asset.getCurrencyName() != null ? asset.getCurrencyName().toUpperCase() : "USD");
+        stock.setSymbol(asset.ticker());
+        stock.setName(asset.name());
+        stock.setExchange(MassiveApiService.mapExchangeCode(asset.primaryExchange()));
+        stock.setCurrency(asset.currencyName() != null ? asset.currencyName().toUpperCase() : "USD");
 
         // Use SIC description as sector if available
         if (stock.getSector() == null) {
-            if (asset.getSicDescription() != null) {
-                stock.setSector(asset.getSicDescription());
+            if (asset.sicDescription() != null) {
+                stock.setSector(asset.sicDescription());
             } else {
-                stock.setSector(guessSector(asset.getTicker()));
+                stock.setSector(guessSector(asset.ticker()));
             }
         }
 
-        if (asset.getMarketCap() != null) {
-            stock.setMarketCap(asset.getMarketCap());
+        if (asset.marketCap() != null) {
+            stock.setMarketCap(asset.marketCap());
         }
 
         stock.setIsActive(true);

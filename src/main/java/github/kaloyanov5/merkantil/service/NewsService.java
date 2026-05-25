@@ -28,45 +28,45 @@ public class NewsService {
 
         MassiveNewsResponse response = massiveApiService.getNews(ticker, limit, order, sort);
 
-        if (response == null || response.getResults() == null) {
+        if (response == null || response.results() == null) {
             return Collections.emptyList();
         }
 
-        return response.getResults().stream()
+        return response.results().stream()
                 .map(this::mapToArticleResponse)
                 .toList();
     }
 
     private NewsArticleResponse mapToArticleResponse(MassiveNewsArticle article) {
         return new NewsArticleResponse(
-                article.getId(),
-                article.getTitle(),
-                article.getAuthor(),
-                article.getDescription(),
-                article.getArticleUrl(),
-                article.getImageUrl(),
-                article.getPublishedUtc(),
-                mapToPublisherResponse(article.getPublisher()),
-                article.getTickers(),
-                article.getKeywords(),
-                mapToInsightResponses(article.getInsights())
+                article.id(),
+                article.title(),
+                article.author(),
+                article.description(),
+                article.articleUrl(),
+                article.imageUrl(),
+                article.publishedUtc(),
+                mapToPublisherResponse(article.publisher()),
+                article.tickers(),
+                article.keywords(),
+                mapToInsightResponses(article.insights())
         );
     }
 
     private NewsPublisherResponse mapToPublisherResponse(MassiveNewsPublisher publisher) {
         if (publisher == null) return null;
         return new NewsPublisherResponse(
-                publisher.getName(),
-                publisher.getHomepageUrl(),
-                publisher.getLogoUrl(),
-                publisher.getFaviconUrl()
+                publisher.name(),
+                publisher.homepageUrl(),
+                publisher.logoUrl(),
+                publisher.faviconUrl()
         );
     }
 
     private List<NewsInsightResponse> mapToInsightResponses(List<MassiveNewsInsight> insights) {
         if (insights == null) return Collections.emptyList();
         return insights.stream()
-                .map(i -> new NewsInsightResponse(i.getTicker(), i.getSentiment(), i.getSentimentReasoning()))
+                .map(i -> new NewsInsightResponse(i.ticker(), i.sentiment(), i.sentimentReasoning()))
                 .toList();
     }
 }

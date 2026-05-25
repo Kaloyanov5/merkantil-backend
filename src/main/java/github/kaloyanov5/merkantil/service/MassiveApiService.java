@@ -69,18 +69,18 @@ public class MassiveApiService {
                 return null;
             }
 
-            if (response.getTicker() == null) {
-                log.warn("No snapshot ticker data for {} (status: {})", symbol, response.getStatus());
+            if (response.ticker() == null) {
+                log.warn("No snapshot ticker data for {} (status: {})", symbol, response.status());
                 return null;
             }
 
             log.debug("Snapshot for {}: lastTrade={}, day={}, prevDay={}",
                     symbol,
-                    response.getTicker().getLastTrade() != null ? response.getTicker().getLastTrade().getPrice() : "null",
-                    response.getTicker().getDay() != null ? response.getTicker().getDay().getClose() : "null",
-                    response.getTicker().getPrevDay() != null ? response.getTicker().getPrevDay().getClose() : "null");
+                    response.ticker().lastTrade() != null ? response.ticker().lastTrade().price() : "null",
+                    response.ticker().day() != null ? response.ticker().day().close() : "null",
+                    response.ticker().prevDay() != null ? response.ticker().prevDay().close() : "null");
 
-            return response.getTicker();
+            return response.ticker();
         } catch (Exception e) {
             log.error("Error fetching snapshot for {}: {}", symbol, e.getMessage());
             return null;
@@ -108,15 +108,15 @@ public class MassiveApiService {
                     .bodyToMono(MassiveMultiSnapshotResponse.class)
                     .block();
 
-            if (response == null || response.getTickers() == null) {
+            if (response == null || response.tickers() == null) {
                 log.warn("No multi-snapshot data returned");
                 return Map.of();
             }
 
-            return response.getTickers().stream()
-                    .filter(t -> t.getTicker() != null)
+            return response.tickers().stream()
+                    .filter(t -> t.ticker() != null)
                     .collect(Collectors.toMap(
-                            MassiveSnapshotTicker::getTicker,
+                            MassiveSnapshotTicker::ticker,
                             t -> t,
                             (a, b) -> a // in case of duplicates, keep first
                     ));
@@ -154,12 +154,12 @@ public class MassiveApiService {
                     .bodyToMono(MassiveAggregatesResponse.class)
                     .block();
 
-            if (response == null || response.getResults() == null) {
+            if (response == null || response.results() == null) {
                 log.warn("No bars response for {}", symbol);
                 return new ArrayList<>();
             }
 
-            List<MassiveBar> bars = response.getResults();
+            List<MassiveBar> bars = response.results();
 
             if (bars.isEmpty()) {
                 log.warn("No bars data for {} in response", symbol);
@@ -194,7 +194,7 @@ public class MassiveApiService {
                     .bodyToMono(MassiveLastTradeResponse.class)
                     .block();
 
-            return response != null ? response.getResults() : null;
+            return response != null ? response.results() : null;
         } catch (Exception e) {
             log.error("Error fetching latest trade for {}: {}", symbol, e.getMessage());
             return null;
@@ -216,7 +216,7 @@ public class MassiveApiService {
                     .bodyToMono(MassiveLastQuoteResponse.class)
                     .block();
 
-            return response != null ? response.getResults() : null;
+            return response != null ? response.results() : null;
         } catch (Exception e) {
             log.error("Error fetching latest quote for {}: {}", symbol, e.getMessage());
             return null;
@@ -266,9 +266,9 @@ public class MassiveApiService {
                             .block();
                 }
 
-                if (response != null && response.getResults() != null) {
-                    allTickers.addAll(response.getResults());
-                    nextUrl = response.getNextUrl();
+                if (response != null && response.results() != null) {
+                    allTickers.addAll(response.results());
+                    nextUrl = response.nextUrl();
                 } else {
                     break;
                 }
@@ -303,7 +303,7 @@ public class MassiveApiService {
                     .bodyToMono(MassiveTickerResponse.class)
                     .block();
 
-            return response != null ? response.getResults() : null;
+            return response != null ? response.results() : null;
         } catch (Exception e) {
             log.error("Error fetching asset {}: {}", symbol, e.getMessage());
             return null;
@@ -334,13 +334,13 @@ public class MassiveApiService {
             }
 
             // Check if either NYSE or NASDAQ is open
-            if (response.getExchanges() != null) {
-                String nyse = response.getExchanges().get("nyse");
-                String nasdaq = response.getExchanges().get("nasdaq");
+            if (response.exchanges() != null) {
+                String nyse = response.exchanges().get("nyse");
+                String nasdaq = response.exchanges().get("nasdaq");
                 return "open".equalsIgnoreCase(nyse) || "open".equalsIgnoreCase(nasdaq);
             }
 
-            return "open".equalsIgnoreCase(response.getMarket());
+            return "open".equalsIgnoreCase(response.market());
         } catch (Exception e) {
             log.error("Error checking market status: {}", e.getMessage());
             return false;
@@ -369,17 +369,17 @@ public class MassiveApiService {
 
             // Check if main exchanges are open
             boolean exchangesOpen = false;
-            if (response.getExchanges() != null) {
-                String nyse = response.getExchanges().get("nyse");
-                String nasdaq = response.getExchanges().get("nasdaq");
+            if (response.exchanges() != null) {
+                String nyse = response.exchanges().get("nyse");
+                String nasdaq = response.exchanges().get("nasdaq");
                 exchangesOpen = "open".equalsIgnoreCase(nyse) || "open".equalsIgnoreCase(nasdaq);
             }
 
-            if (exchangesOpen || "open".equalsIgnoreCase(response.getMarket())) {
+            if (exchangesOpen || "open".equalsIgnoreCase(response.market())) {
                 status = "OPEN";
-            } else if (response.getEarlyHours() != null && response.getEarlyHours()) {
+            } else if (response.earlyHours() != null && response.earlyHours()) {
                 status = "PRE_MARKET";
-            } else if (response.getAfterHours() != null && response.getAfterHours()) {
+            } else if (response.afterHours() != null && response.afterHours()) {
                 status = "AFTER_HOURS";
             } else {
                 status = "CLOSED";
@@ -387,7 +387,7 @@ public class MassiveApiService {
 
             return Map.of(
                     "status", status,
-                    "serverTime", response.getServerTime() != null ? response.getServerTime() : ""
+                    "serverTime", response.serverTime() != null ? response.serverTime() : ""
             );
         } catch (Exception e) {
             log.error("Error checking detailed market status: {}", e.getMessage());
@@ -415,8 +415,8 @@ public class MassiveApiService {
                     .bodyToMono(MassiveAggregatesResponse.class)
                     .block();
 
-            if (response != null && response.getResults() != null && !response.getResults().isEmpty()) {
-                return response.getResults().getFirst();
+            if (response != null && response.results() != null && !response.results().isEmpty()) {
+                return response.results().getFirst();
             }
             return null;
         } catch (Exception e) {
@@ -470,7 +470,7 @@ public class MassiveApiService {
                 return null;
             }
 
-            log.info("Fetched {} news articles", response.getCount());
+            log.info("Fetched {} news articles", response.count());
             return response;
         } catch (Exception e) {
             log.error("Error fetching news: {}", e.getMessage());
