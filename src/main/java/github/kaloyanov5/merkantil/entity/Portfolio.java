@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(name = "portfolios", uniqueConstraints = {
         @UniqueConstraint(name = "uk_portfolio_user_symbol", columnNames = {"user_id", "symbol"})
@@ -35,8 +37,8 @@ public class Portfolio {
     private Integer quantity;
 
     @NotNull
-    @Column(nullable = false)
-    private Double averageBuyPrice;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal averageBuyPrice;
 
     // CURRENT VALUE
 }

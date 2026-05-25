@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -41,26 +42,27 @@ public class Stock {
     @Column(length = 100)
     private String industry;  // e.g., "Consumer Electronics"
 
-    @Column
-    private Double currentPrice;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal currentPrice;
 
-    @Column
-    private Double previousClose;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal previousClose;
 
-    @Column
-    private Double dayHigh;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal dayHigh;
 
-    @Column
-    private Double dayLow;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal dayLow;
 
     @Column
     private Long volume;
 
+    // Display-only aggregate — never used in money arithmetic, kept as Double.
     @Column
     private Double marketCap;
 
-    @Column(name = "extended_hours_price")
-    private Double extendedHoursPrice;
+    @Column(name = "extended_hours_price", precision = 19, scale = 4)
+    private BigDecimal extendedHoursPrice;
 
     @Column
     private Boolean isActive = true;  // Whether stock is tradeable

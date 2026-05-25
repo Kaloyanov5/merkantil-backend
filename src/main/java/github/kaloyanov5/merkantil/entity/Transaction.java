@@ -10,6 +10,9 @@ import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import github.kaloyanov5.merkantil.util.MoneyUtil;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -53,11 +56,11 @@ public class Transaction {
 
     @NotNull
     @Positive
-    @Column(nullable = false)
-    private Double price; // executed price per share
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal price; // executed price per share
 
-    @Column(nullable = false, name = "total_amount")
-    private Double totalAmount;
+    @Column(nullable = false, name = "total_amount", precision = 19, scale = 4)
+    private BigDecimal totalAmount;
 
     @Column(nullable = false, updatable = false)
     @CreatedDate
@@ -68,6 +71,6 @@ public class Transaction {
         if (price == null || quantity == null) {
             throw new IllegalStateException("Price and quantity must be set before persisting a Transaction");
         }
-        this.totalAmount = price * quantity;
+        this.totalAmount = MoneyUtil.multiply(price, quantity);
     }
 }

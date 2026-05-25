@@ -9,6 +9,7 @@ import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -43,11 +44,11 @@ public class Order {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(name = "at_price")
-    private Double atPrice;
+    @Column(name = "at_price", precision = 19, scale = 4)
+    private BigDecimal atPrice;
 
-    @Column(name = "limit_price")
-    private Double limitPrice;
+    @Column(name = "limit_price", precision = 19, scale = 4)
+    private BigDecimal limitPrice;
 
     @NotNull
     @Column(nullable = false, name = "order_type")

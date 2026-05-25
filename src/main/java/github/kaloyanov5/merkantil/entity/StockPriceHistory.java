@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -30,20 +31,20 @@ public class StockPriceHistory {
     private LocalDate date;
 
     @NotNull
-    @Column(nullable = false)
-    private Double open;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal open;
 
     @NotNull
-    @Column(nullable = false)
-    private Double high;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal high;
 
     @NotNull
-    @Column(nullable = false)
-    private Double low;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal low;
 
     @NotNull
-    @Column(nullable = false)
-    private Double close;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal close;
 
     @Column
     private Long volume;
