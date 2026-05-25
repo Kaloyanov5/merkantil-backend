@@ -9,6 +9,7 @@ import github.kaloyanov5.merkantil.entity.StockPriceHistory;
 import github.kaloyanov5.merkantil.repository.OrderRepository;
 import github.kaloyanov5.merkantil.repository.StockPriceHistoryRepository;
 import github.kaloyanov5.merkantil.repository.StockRepository;
+import github.kaloyanov5.merkantil.util.MoneyUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -17,6 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -36,6 +38,7 @@ public class StockPriceScheduler {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final MarketSessionService marketSessionService;
 
     private static final int BATCH_SIZE = 10; // Process 10 stocks per API call
 
@@ -47,7 +50,7 @@ public class StockPriceScheduler {
     @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updateAllStockPrices() {
         try {
-            String marketSession = resolveMarketSession();
+            String marketSession = marketSessionService.getCurrentSession();
             log.info("Starting scheduled stock price update (session: {})...", marketSession);
 
             if ("CLOSED".equals(marketSession) || "HOLIDAY".equals(marketSession)) {
@@ -78,16 +81,6 @@ public class StockPriceScheduler {
             log.info("All stock price updates completed");
         } catch (Exception e) {
             log.error("Error in scheduled stock price update: {}", e.getMessage());
-        }
-    }
-
-    private String resolveMarketSession() {
-        try {
-            Map<String, String> status = massiveApiService.getDetailedMarketStatus();
-            return status.getOrDefault("status", "CLOSED");
-        } catch (Exception e) {
-            log.warn("Could not determine market session: {}", e.getMessage());
-            return "CLOSED";
         }
     }
 
@@ -135,10 +128,10 @@ public class StockPriceScheduler {
                     StockPriceHistory history = new StockPriceHistory();
                     history.setSymbol(stock.getSymbol());
                     history.setDate(today);
-                    history.setOpen(bar.getOpen());
-                    history.setHigh(bar.getHigh());
-                    history.setLow(bar.getLow());
-                    history.setClose(bar.getClose());
+                    history.setOpen(MoneyUtil.of(bar.getOpen()));
+                    history.setHigh(MoneyUtil.of(bar.getHigh()));
+                    history.setLow(MoneyUtil.of(bar.getLow()));
+                    history.setClose(MoneyUtil.of(bar.getClose()));
                     history.setVolume(bar.getVolume() != null ? bar.getVolume().longValue() : null);
                     history.setCreatedAt(LocalDateTime.now());
 
@@ -279,10 +272,10 @@ public class StockPriceScheduler {
                 StockPriceHistory history = new StockPriceHistory();
                 history.setSymbol(symbol.toUpperCase());
                 history.setDate(date);
-                history.setOpen(bar.getOpen());
-                history.setHigh(bar.getHigh());
-                history.setLow(bar.getLow());
-                history.setClose(bar.getClose());
+                history.setOpen(MoneyUtil.of(bar.getOpen()));
+                history.setHigh(MoneyUtil.of(bar.getHigh()));
+                history.setLow(MoneyUtil.of(bar.getLow()));
+                history.setClose(MoneyUtil.of(bar.getClose()));
                 history.setVolume(bar.getVolume() != null ? bar.getVolume().longValue() : null);
                 history.setCreatedAt(LocalDateTime.now());
 
@@ -393,18 +386,18 @@ public class StockPriceScheduler {
 
         if (openOrders.isEmpty()) return;
 
-        Map<String, Double> priceMap = stocks.stream()
+        Map<String, BigDecimal> priceMap = stocks.stream()
                 .filter(s -> s.getCurrentPrice() != null)
                 .collect(Collectors.toMap(Stock::getSymbol, Stock::getCurrentPrice));
 
         for (Order order : openOrders) {
             try {
-                Double currentPrice = priceMap.get(order.getSymbol());
+                BigDecimal currentPrice = priceMap.get(order.getSymbol());
                 if (currentPrice == null || order.getLimitPrice() == null) continue;
 
                 boolean conditionMet = order.getType() == Side.BUY
-                        ? currentPrice <= order.getLimitPrice()
-                        : currentPrice >= order.getLimitPrice();
+                        ? currentPrice.compareTo(order.getLimitPrice()) <= 0
+                        : currentPrice.compareTo(order.getLimitPrice()) >= 0;
 
                 if (conditionMet) {
                     orderService.executeLimitOrder(order, currentPrice);
@@ -429,15 +422,15 @@ public class StockPriceScheduler {
             // Live regular-hours price — priority: lastTrade > min.close > fmv > day.close
             if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
                     && snapshot.getLastTrade().getPrice() > 0) {
-                stock.setCurrentPrice(snapshot.getLastTrade().getPrice());
+                stock.setCurrentPrice(MoneyUtil.of(snapshot.getLastTrade().getPrice()));
             } else if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
                     && snapshot.getMin().getClose() > 0) {
-                stock.setCurrentPrice(snapshot.getMin().getClose());
+                stock.setCurrentPrice(MoneyUtil.of(snapshot.getMin().getClose()));
             } else if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
-                stock.setCurrentPrice(snapshot.getFmv());
+                stock.setCurrentPrice(MoneyUtil.of(snapshot.getFmv()));
             } else if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
                     && snapshot.getDay().getClose() > 0) {
-                stock.setCurrentPrice(snapshot.getDay().getClose());
+                stock.setCurrentPrice(MoneyUtil.of(snapshot.getDay().getClose()));
             } else {
                 log.debug("No valid price in snapshot for {}, currentPrice unchanged ({})",
                         stock.getSymbol(), stock.getCurrentPrice());
@@ -447,10 +440,10 @@ public class StockPriceScheduler {
 
             if (snapshot.getDay() != null) {
                 if (snapshot.getDay().getHigh() != null && snapshot.getDay().getHigh() > 0) {
-                    stock.setDayHigh(snapshot.getDay().getHigh());
+                    stock.setDayHigh(MoneyUtil.of(snapshot.getDay().getHigh()));
                 }
                 if (snapshot.getDay().getLow() != null && snapshot.getDay().getLow() > 0) {
-                    stock.setDayLow(snapshot.getDay().getLow());
+                    stock.setDayLow(MoneyUtil.of(snapshot.getDay().getLow()));
                 }
                 if (snapshot.getDay().getVolume() != null && snapshot.getDay().getVolume() > 0) {
                     stock.setVolume(snapshot.getDay().getVolume().longValue());
@@ -458,15 +451,15 @@ public class StockPriceScheduler {
             }
         } else {
             // PRE_MARKET or AFTER_HOURS — update extended price only, leave currentPrice intact
-            Double extPrice = null;
+            BigDecimal extPrice = null;
             if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
                     && snapshot.getLastTrade().getPrice() > 0) {
-                extPrice = snapshot.getLastTrade().getPrice();
+                extPrice = MoneyUtil.of(snapshot.getLastTrade().getPrice());
             } else if (snapshot.getMin() != null && snapshot.getMin().getClose() != null
                     && snapshot.getMin().getClose() > 0) {
-                extPrice = snapshot.getMin().getClose();
+                extPrice = MoneyUtil.of(snapshot.getMin().getClose());
             } else if (snapshot.getFmv() != null && snapshot.getFmv() > 0) {
-                extPrice = snapshot.getFmv();
+                extPrice = MoneyUtil.of(snapshot.getFmv());
             }
 
             if (extPrice != null) {
@@ -481,16 +474,16 @@ public class StockPriceScheduler {
             // During PRE_MARKET: day.close may be 0 (no trading yet), so fall back to prevDay.close.
             if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
                     && snapshot.getDay().getClose() > 0) {
-                stock.setCurrentPrice(snapshot.getDay().getClose());
+                stock.setCurrentPrice(MoneyUtil.of(snapshot.getDay().getClose()));
             } else if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
                     && snapshot.getPrevDay().getClose() > 0) {
-                stock.setCurrentPrice(snapshot.getPrevDay().getClose());
+                stock.setCurrentPrice(MoneyUtil.of(snapshot.getPrevDay().getClose()));
             }
 
             // Keep previousClose up to date from prevDay
             if (snapshot.getPrevDay() != null && snapshot.getPrevDay().getClose() != null
                     && snapshot.getPrevDay().getClose() > 0) {
-                stock.setPreviousClose(snapshot.getPrevDay().getClose());
+                stock.setPreviousClose(MoneyUtil.of(snapshot.getPrevDay().getClose()));
             }
         }
 
@@ -505,7 +498,7 @@ public class StockPriceScheduler {
     public void updatePricesNow() {
         log.info("Manual price update triggered");
 
-        String marketSession = resolveMarketSession();
+        String marketSession = marketSessionService.getCurrentSession();
 
         List<Stock> allStocks = stockRepository.findAll().stream()
                 .filter(s -> s.getIsActive() != null && s.getIsActive())
