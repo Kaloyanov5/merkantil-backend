@@ -61,14 +61,14 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(request.email())) {
             throw new IllegalArgumentException("Email already exists");
         }
         User user = new User();
-        user.setFirstName(request.getFirstName());
-        user.setLastName(request.getLastName());
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setFirstName(request.firstName());
+        user.setLastName(request.lastName());
+        user.setEmail(request.email());
+        user.setPassword(passwordEncoder.encode(request.password()));
         user.setBalance(java.math.BigDecimal.valueOf(10000));
         User savedUser = userRepository.save(user);
 
@@ -80,13 +80,13 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        String rateKey = "login:" + request.getEmail().toLowerCase();
+        String rateKey = "login:" + request.email().toLowerCase();
         rateLimiterService.check(rateKey, MAX_ATTEMPTS, ATTEMPT_WINDOW);
 
         Authentication authentication;
         try {
             authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                    new UsernamePasswordAuthenticationToken(request.email(), request.password())
             );
         } catch (BadCredentialsException e) {
             rateLimiterService.penalize(rateKey, ATTEMPT_WINDOW);
@@ -126,7 +126,7 @@ public class AuthService {
         loginSessionService.saveSession(user.getId(), httpRequest.getSession().getId(), httpRequest);
 
         // Set remember-me cookie if requested
-        if (request.isRememberMe()) {
+        if (request.rememberMe()) {
             // Wrap request to inject the remember-me parameter since we use JSON (not form)
             HttpServletRequestWrapper rememberMeRequest = new HttpServletRequestWrapper(httpRequest) {
                 @Override

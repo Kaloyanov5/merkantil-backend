@@ -181,7 +181,7 @@ public class UserController {
     ) {
         try {
             User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.deposit(id, request.getAmount(), currentUser.getId(), request.getPaymentMethodId());
+            BalanceResponse balance = userService.deposit(id, request.amount(), currentUser.getId(), request.paymentMethodId());
             return ResponseEntity.ok(Map.of(
                     "message", "Deposit successful",
                     "balance", balance
@@ -206,7 +206,7 @@ public class UserController {
     ) {
         try {
             User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.withdraw(id, request.getAmount(), currentUser.getId()); // paymentMethodId not used for withdrawals
+            BalanceResponse balance = userService.withdraw(id, request.amount(), currentUser.getId()); // paymentMethodId not used for withdrawals
             return ResponseEntity.ok(Map.of(
                     "message", "Withdrawal successful",
                     "balance", balance

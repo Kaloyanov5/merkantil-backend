@@ -44,19 +44,19 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
 
-        if (!request.getNewPassword().equals(request.getConfirmNewPassword())) {
+        if (!request.newPassword().equals(request.confirmNewPassword())) {
             throw new IllegalArgumentException("New passwords do not match");
         }
 
-        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+        if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {
             throw new IllegalArgumentException("New password must differ from current password");
         }
 
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
 
         // Revoke all active sessions across all devices
@@ -178,7 +178,7 @@ public class UserService {
 
     @Transactional
     public BalanceResponse transfer(Long senderId, TransferRequest request) {
-        if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+        if (request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Transfer amount must be positive");
         }
 
@@ -189,43 +189,43 @@ public class UserService {
             throw new IllegalArgumentException("Your account has been suspended");
         }
 
-        User recipient = userRepository.findByEmail(request.getRecipientEmail())
+        User recipient = userRepository.findByEmail(request.recipientEmail())
                 .orElseThrow(() -> new IllegalArgumentException("Recipient not found"));
 
         if (sender.getId().equals(recipient.getId())) {
             throw new IllegalArgumentException("Cannot transfer funds to yourself");
         }
 
-        if (sender.getBalance().compareTo(request.getAmount()) < 0) {
+        if (sender.getBalance().compareTo(request.amount()) < 0) {
             throw new IllegalArgumentException(
                     String.format("Insufficient funds. Available: $%.2f", sender.getBalance()));
         }
 
-        sender.setBalance(sender.getBalance().subtract(request.getAmount()));
-        recipient.setBalance(recipient.getBalance().add(request.getAmount()));
+        sender.setBalance(sender.getBalance().subtract(request.amount()));
+        recipient.setBalance(recipient.getBalance().add(request.amount()));
         userRepository.save(sender);
         userRepository.save(recipient);
 
         WalletTransaction outTx = new WalletTransaction();
         outTx.setUser(sender);
         outTx.setType(WalletTransactionType.TRANSFER_OUT);
-        outTx.setAmount(request.getAmount());
+        outTx.setAmount(request.amount());
         outTx.setNote(recipient.getEmail());
-        outTx.setDescription(request.getDescription());
+        outTx.setDescription(request.description());
         walletTransactionRepository.save(outTx);
 
         WalletTransaction inTx = new WalletTransaction();
         inTx.setUser(recipient);
         inTx.setType(WalletTransactionType.TRANSFER_IN);
-        inTx.setAmount(request.getAmount());
+        inTx.setAmount(request.amount());
         inTx.setNote(sender.getEmail());
-        inTx.setDescription(request.getDescription());
+        inTx.setDescription(request.description());
         walletTransactionRepository.save(inTx);
 
         try {
             emailService.sendTransferReceivedEmail(
                     recipient.getEmail(), sender.getEmail(),
-                    request.getAmount(), request.getDescription());
+                    request.amount(), request.description());
         } catch (Exception e) {
             log.warn("Failed to send transfer email to {}: {}", recipient.getEmail(), e.getMessage());
         }

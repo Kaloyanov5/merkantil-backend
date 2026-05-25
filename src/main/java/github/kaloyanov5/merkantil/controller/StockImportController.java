@@ -99,7 +99,7 @@ public class StockImportController {
     @PostMapping("/multiple")
     public ResponseEntity<?> importMultipleStocks(@RequestBody ImportMultipleRequest request) {
         try {
-            List<String> symbols = request.getSymbols();
+            List<String> symbols = request.symbols();
             if (symbols == null || symbols.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "symbols array is required and cannot be empty"));

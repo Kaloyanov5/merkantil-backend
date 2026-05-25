@@ -53,18 +53,18 @@ public class OrderService {
             throw new IllegalArgumentException("Your account has been suspended");
         }
 
-        Stock stock = stockRepository.findBySymbol(request.getSymbol().toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + request.getSymbol()));
+        Stock stock = stockRepository.findBySymbol(request.symbol().toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + request.symbol()));
 
         if (!stock.getIsActive()) {
             throw new IllegalArgumentException("Stock is not active for trading");
         }
 
-        OrderType orderType = OrderType.valueOf(request.getOrderType().toUpperCase());
-        Side side = Side.valueOf(request.getSide().toUpperCase());
+        OrderType orderType = OrderType.valueOf(request.orderType().toUpperCase());
+        Side side = Side.valueOf(request.side().toUpperCase());
 
         if (orderType == OrderType.LIMIT) {
-            if (request.getLimitPrice() == null || request.getLimitPrice().signum() <= 0) {
+            if (request.limitPrice() == null || request.limitPrice().signum() <= 0) {
                 throw new IllegalArgumentException("Limit price is required for LIMIT orders");
             }
             return side == Side.BUY
@@ -102,7 +102,7 @@ public class OrderService {
      * Place a LIMIT BUY order — reserves funds immediately, waits for price condition.
      */
     private OrderResponse placeLimitBuyOrder(User user, Stock stock, OrderRequest request) {
-        BigDecimal reserved = MoneyUtil.multiply(request.getLimitPrice(), request.getQuantity());
+        BigDecimal reserved = MoneyUtil.multiply(request.limitPrice(), request.quantity());
 
         if (user.getBalance().compareTo(reserved) < 0) {
             throw new IllegalArgumentException(
@@ -117,14 +117,14 @@ public class OrderService {
         order.setUser(user);
         order.setSymbol(stock.getSymbol());
         order.setType(Side.BUY);
-        order.setQuantity(request.getQuantity());
-        order.setLimitPrice(request.getLimitPrice());
+        order.setQuantity(request.quantity());
+        order.setLimitPrice(request.limitPrice());
         order.setOrderType(OrderType.LIMIT);
         order.setStatus(OrderStatus.OPEN);
         Order saved = orderRepository.save(order);
 
         log.info("LIMIT BUY placed: User {} wants {} shares of {} at ${} (funds reserved)",
-                user.getId(), request.getQuantity(), stock.getSymbol(), request.getLimitPrice());
+                user.getId(), request.quantity(), stock.getSymbol(), request.limitPrice());
         return mapToOrderResponse(saved);
     }
 
@@ -135,24 +135,24 @@ public class OrderService {
         Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), stock.getSymbol())
                 .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
 
-        if (portfolio.getQuantity() < request.getQuantity()) {
+        if (portfolio.getQuantity() < request.quantity()) {
             throw new IllegalArgumentException(
                     String.format("Insufficient shares. You own %d but tried to sell %d",
-                            portfolio.getQuantity(), request.getQuantity()));
+                            portfolio.getQuantity(), request.quantity()));
         }
 
         Order order = new Order();
         order.setUser(user);
         order.setSymbol(stock.getSymbol());
         order.setType(Side.SELL);
-        order.setQuantity(request.getQuantity());
-        order.setLimitPrice(request.getLimitPrice());
+        order.setQuantity(request.quantity());
+        order.setLimitPrice(request.limitPrice());
         order.setOrderType(OrderType.LIMIT);
         order.setStatus(OrderStatus.OPEN);
         Order saved = orderRepository.save(order);
 
         log.info("LIMIT SELL placed: User {} wants to sell {} shares of {} at ${}",
-                user.getId(), request.getQuantity(), stock.getSymbol(), request.getLimitPrice());
+                user.getId(), request.quantity(), stock.getSymbol(), request.limitPrice());
         return mapToOrderResponse(saved);
     }
 
@@ -264,7 +264,7 @@ public class OrderService {
      * Execute BUY order
      */
     private OrderResponse executeBuyOrder(User user, Stock stock, OrderRequest request, BigDecimal executionPrice) {
-        BigDecimal totalCost = MoneyUtil.multiply(executionPrice, request.getQuantity());
+        BigDecimal totalCost = MoneyUtil.multiply(executionPrice, request.quantity());
 
         // Check if user has sufficient funds
         if (user.getBalance().compareTo(totalCost) < 0) {
@@ -279,7 +279,7 @@ public class OrderService {
         order.setUser(user);
         order.setSymbol(stock.getSymbol());
         order.setType(Side.BUY);
-        order.setQuantity(request.getQuantity());
+        order.setQuantity(request.quantity());
         order.setAtPrice(executionPrice);
         order.setOrderType(OrderType.MARKET);
         order.setStatus(OrderStatus.FILLED);
@@ -295,15 +295,15 @@ public class OrderService {
         transaction.setOrder(savedOrder);
         transaction.setStockSymbol(stock.getSymbol());
         transaction.setType(Side.BUY);
-        transaction.setQuantity(request.getQuantity());
+        transaction.setQuantity(request.quantity());
         transaction.setPrice(executionPrice);
         transactionRepository.save(transaction);
 
         // Update portfolio
-        updatePortfolioAfterBuy(user, stock.getSymbol(), request.getQuantity(), executionPrice);
+        updatePortfolioAfterBuy(user, stock.getSymbol(), request.quantity(), executionPrice);
 
         log.info("BUY order executed: User {} bought {} shares of {} at ${} (Total: ${})",
-                user.getId(), request.getQuantity(), stock.getSymbol(), executionPrice, totalCost);
+                user.getId(), request.quantity(), stock.getSymbol(), executionPrice, totalCost);
 
         return mapToOrderResponse(savedOrder);
     }
@@ -317,21 +317,21 @@ public class OrderService {
                 .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
 
         // Check if user has enough shares
-        if (portfolio.getQuantity() < request.getQuantity()) {
+        if (portfolio.getQuantity() < request.quantity()) {
             throw new IllegalArgumentException(
                     String.format("Insufficient shares. You own %d shares but trying to sell %d",
-                            portfolio.getQuantity(), request.getQuantity())
+                            portfolio.getQuantity(), request.quantity())
             );
         }
 
-        BigDecimal totalRevenue = MoneyUtil.multiply(executionPrice, request.getQuantity());
+        BigDecimal totalRevenue = MoneyUtil.multiply(executionPrice, request.quantity());
 
         // Create order
         Order order = new Order();
         order.setUser(user);
         order.setSymbol(stock.getSymbol());
         order.setType(Side.SELL);
-        order.setQuantity(request.getQuantity());
+        order.setQuantity(request.quantity());
         order.setAtPrice(executionPrice);
         order.setOrderType(OrderType.MARKET);
         order.setStatus(OrderStatus.FILLED);
@@ -347,15 +347,15 @@ public class OrderService {
         transaction.setOrder(savedOrder);
         transaction.setStockSymbol(stock.getSymbol());
         transaction.setType(Side.SELL);
-        transaction.setQuantity(request.getQuantity());
+        transaction.setQuantity(request.quantity());
         transaction.setPrice(executionPrice);
         transactionRepository.save(transaction);
 
         // Update portfolio
-        updatePortfolioAfterSell(user, portfolio, request.getQuantity());
+        updatePortfolioAfterSell(user, portfolio, request.quantity());
 
         log.info("SELL order executed: User {} sold {} shares of {} at ${} (Total: ${})",
-                user.getId(), request.getQuantity(), stock.getSymbol(), executionPrice, totalRevenue);
+                user.getId(), request.quantity(), stock.getSymbol(), executionPrice, totalRevenue);
 
         return mapToOrderResponse(savedOrder);
     }

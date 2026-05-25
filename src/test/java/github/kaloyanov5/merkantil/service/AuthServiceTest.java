@@ -76,11 +76,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("register: creates user, seeds $10,000 balance, sends verification email")
     void register_success_sendsVerificationEmail() {
-        RegisterRequest req = new RegisterRequest();
-        req.setFirstName("Ana");
-        req.setLastName("Test");
-        req.setEmail("ana@example.com");
-        req.setPassword("password123");
+        RegisterRequest req = new RegisterRequest("Ana", "Test", "ana@example.com", "password123");
 
         when(userRepository.existsByEmail("ana@example.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("hashed");
@@ -103,9 +99,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("register: duplicate email throws")
     void register_duplicateEmail_throws() {
-        RegisterRequest req = new RegisterRequest();
-        req.setEmail("taken@example.com");
-        req.setPassword("password123");
+        RegisterRequest req = new RegisterRequest(null, null, "taken@example.com", "password123");
 
         when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
@@ -122,9 +116,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("login: throws RateLimitedException when attempt counter at threshold")
     void login_rateLimited_throws() {
-        LoginRequest req = new LoginRequest();
-        req.setEmail("victim@example.com");
-        req.setPassword("wrong");
+        LoginRequest req = new LoginRequest("victim@example.com", "wrong", false);
 
         doThrow(new RateLimitedException(600L))
                 .when(rateLimiterService).check(eq("login:victim@example.com"), anyInt(), any());
@@ -140,9 +132,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("login: bad credentials increments attempts counter")
     void login_badCredentials_incrementsAttempts() {
-        LoginRequest req = new LoginRequest();
-        req.setEmail("user@example.com");
-        req.setPassword("wrong");
+        LoginRequest req = new LoginRequest("user@example.com", "wrong", false);
 
         when(authenticationManager.authenticate(any()))
                 .thenThrow(new BadCredentialsException("Bad credentials"));
@@ -159,9 +149,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("login: 2FA enabled user → throws TwoFactorRequiredException (no session created)")
     void login_2faEnabled_throwsTwoFactorRequired() {
-        LoginRequest req = new LoginRequest();
-        req.setEmail("2fa@example.com");
-        req.setPassword("correct");
+        LoginRequest req = new LoginRequest("2fa@example.com", "correct", false);
 
         User user = new User();
         user.setId(7L);

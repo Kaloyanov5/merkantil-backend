@@ -69,7 +69,7 @@ public class AuthController {
     public ResponseEntity<?> verify2fa(@Valid @RequestBody TwoFactorVerifyRequest request,
                                        HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         try {
-            AuthResponse response = authService.verify2fa(request.getTempToken(), request.getCode(), httpRequest, httpResponse);
+            AuthResponse response = authService.verify2fa(request.tempToken(), request.code(), httpRequest, httpResponse);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -122,7 +122,7 @@ public class AuthController {
             @ApiResponse(responseCode = "200", description = "Reset code sent if email exists")
     })
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        authService.forgotPassword(request.getEmail());
+        authService.forgotPassword(request.email());
         return ResponseEntity.ok(Map.of("message", "If that email is registered you will receive a reset code shortly"));
     }
 
@@ -134,7 +134,7 @@ public class AuthController {
     })
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         try {
-            authService.resetPassword(request.getEmail(), request.getCode(), request.getNewPassword());
+            authService.resetPassword(request.email(), request.code(), request.newPassword());
             return ResponseEntity.ok(Map.of("message", "Password reset successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

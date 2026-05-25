@@ -26,11 +26,11 @@ public class PaymentMethodService {
 
         PaymentMethod pm = new PaymentMethod();
         pm.setUser(user);
-        pm.setCardholderName(request.getCardholderName());
-        pm.setLast4(request.getLast4());
-        pm.setExpiryMonth(request.getExpiryMonth());
-        pm.setExpiryYear(request.getExpiryYear());
-        pm.setCardType(request.getCardType().toUpperCase());
+        pm.setCardholderName(request.cardholderName());
+        pm.setLast4(request.last4());
+        pm.setExpiryMonth(request.expiryMonth());
+        pm.setExpiryYear(request.expiryYear());
+        pm.setCardType(request.cardType().toUpperCase());
 
         PaymentMethod saved = paymentMethodRepository.save(pm);
         return mapToResponse(saved);

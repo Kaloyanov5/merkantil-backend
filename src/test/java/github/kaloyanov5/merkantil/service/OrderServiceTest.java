@@ -74,22 +74,11 @@ class OrderServiceTest {
     }
 
     private OrderRequest marketOrder(String side, int qty) {
-        OrderRequest req = new OrderRequest();
-        req.setSymbol("AAPL");
-        req.setSide(side);
-        req.setOrderType("MARKET");
-        req.setQuantity(qty);
-        return req;
+        return new OrderRequest("AAPL", side, qty, "MARKET", null);
     }
 
     private OrderRequest limitOrder(String side, int qty, double limit) {
-        OrderRequest req = new OrderRequest();
-        req.setSymbol("AAPL");
-        req.setSide(side);
-        req.setOrderType("LIMIT");
-        req.setQuantity(qty);
-        req.setLimitPrice(BigDecimal.valueOf(limit));
-        return req;
+        return new OrderRequest("AAPL", side, qty, "LIMIT", BigDecimal.valueOf(limit));
     }
 
     private void stubMarketPrice(double price) {
@@ -324,8 +313,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("LIMIT BUY: rejected when limitPrice missing")
     void limitBuy_missingLimitPrice_throws() {
-        OrderRequest req = limitOrder("BUY", 10, 0.0);
-        req.setLimitPrice(null);
+        OrderRequest req = new OrderRequest("AAPL", "BUY", 10, "LIMIT", null);
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, req))
                 .isInstanceOf(IllegalArgumentException.class)
