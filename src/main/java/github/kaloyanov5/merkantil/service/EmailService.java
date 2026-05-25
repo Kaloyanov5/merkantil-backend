@@ -95,11 +95,11 @@ public class EmailService {
     }
 
     public void sendLimitOrderFilledEmail(String to, String side, String symbol,
-                                           int quantity, double executionPrice, double totalValue,
-                                           double refund) {
+                                           int quantity, java.math.BigDecimal executionPrice,
+                                           java.math.BigDecimal totalValue, java.math.BigDecimal refund) {
         String sideLabel = side.equals("BUY") ? "Buy" : "Sell";
         String sideColor = side.equals("BUY") ? "#16a34a" : "#dc2626";
-        String refundHtml = (side.equals("BUY") && refund > 0)
+        String refundHtml = (side.equals("BUY") && refund.signum() > 0)
                 ? "<p style=\"color:#16a34a;margin-top:8px\">Refund for price difference: <strong>$%s</strong></p>"
                   .formatted(String.format("%.2f", refund))
                 : "";
