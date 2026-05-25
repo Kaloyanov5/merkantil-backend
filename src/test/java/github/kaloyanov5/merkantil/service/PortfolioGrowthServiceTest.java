@@ -17,8 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -52,7 +52,7 @@ class PortfolioGrowthServiceTest {
     private static final LocalDate DAY_5 = LocalDate.of(2026, 5, 8);  // Fri
 
     private final List<Transaction> allTransactions = new ArrayList<>();
-    private final Map<String, Map<LocalDate, Double>> priceHistory = new HashMap<>();
+    private final Map<String, Map<LocalDate, BigDecimal>> priceHistory = new HashMap<>();
 
     @BeforeEach
     void setUp() {
@@ -76,7 +76,7 @@ class PortfolioGrowthServiceTest {
                 .thenAnswer(inv -> {
                     String symbol = ((String) inv.getArgument(0)).toUpperCase();
                     LocalDate date = inv.getArgument(1);
-                    Map<LocalDate, Double> bySymbol = priceHistory.get(symbol);
+                    Map<LocalDate, BigDecimal> bySymbol = priceHistory.get(symbol);
                     if (bySymbol == null) return Optional.empty();
                     return bySymbol.entrySet().stream()
                             .filter(e -> !e.getKey().isAfter(date))
@@ -99,14 +99,15 @@ class PortfolioGrowthServiceTest {
         tx.setStockSymbol(symbol);
         tx.setType(side);
         tx.setQuantity(quantity);
-        tx.setPrice(100.0); // doesn't affect reconstruction value (uses historical price)
-        tx.setTotalAmount(100.0 * quantity);
+        tx.setPrice(new BigDecimal("100.00")); // doesn't affect reconstruction (uses historical price)
+        tx.setTotalAmount(BigDecimal.valueOf(100L * quantity));
         tx.setTimestamp(date.atTime(LocalTime.NOON));
         allTransactions.add(tx);
     }
 
     private void addPriceHistory(String symbol, LocalDate date, double close) {
-        priceHistory.computeIfAbsent(symbol.toUpperCase(), k -> new HashMap<>()).put(date, close);
+        priceHistory.computeIfAbsent(symbol.toUpperCase(), k -> new HashMap<>())
+                .put(date, BigDecimal.valueOf(close));
     }
 
     // ---------- TESTS ----------
@@ -118,7 +119,7 @@ class PortfolioGrowthServiceTest {
                 service.getPortfolioGrowthCustomRange(1L, DAY_1, DAY_3);
 
         assertThat(growth).hasSize(3);
-        assertThat(growth).allMatch(g -> g.value() == 0.0);
+        assertThat(growth).allMatch(g -> g.value().signum() == 0);
     }
 
     @Test
@@ -135,13 +136,13 @@ class PortfolioGrowthServiceTest {
 
         assertThat(growth).hasSize(4);
         // DAY_1 — no position yet
-        assertThat(growth.get(0).value()).isEqualTo(0.0);
+        assertThat(growth.get(0).value()).isEqualByComparingTo("0");
         // DAY_2 — 10 * 150 = 1500
-        assertThat(growth.get(1).value()).isEqualTo(1500.0);
+        assertThat(growth.get(1).value()).isEqualByComparingTo("1500");
         // DAY_3 — 10 * 160 = 1600 (uses DAY_3 price, NOT DAY_5)
-        assertThat(growth.get(2).value()).isEqualTo(1600.0);
+        assertThat(growth.get(2).value()).isEqualByComparingTo("1600");
         // DAY_4 — 10 * 170 = 1700
-        assertThat(growth.get(3).value()).isEqualTo(1700.0);
+        assertThat(growth.get(3).value()).isEqualByComparingTo("1700");
     }
 
     @Test
@@ -159,13 +160,13 @@ class PortfolioGrowthServiceTest {
                 service.getPortfolioGrowthCustomRange(1L, DAY_1, DAY_4);
 
         // DAY_1 — 10 shares × 100 = 1000
-        assertThat(growth.get(0).value()).isEqualTo(1000.0);
+        assertThat(growth.get(0).value()).isEqualByComparingTo("1000");
         // DAY_2 — 10 shares × 110 = 1100
-        assertThat(growth.get(1).value()).isEqualTo(1100.0);
+        assertThat(growth.get(1).value()).isEqualByComparingTo("1100");
         // DAY_3 — 6 shares × 120 = 720 (after sell)
-        assertThat(growth.get(2).value()).isEqualTo(720.0);
+        assertThat(growth.get(2).value()).isEqualByComparingTo("720");
         // DAY_4 — 6 shares × 130 = 780
-        assertThat(growth.get(3).value()).isEqualTo(780.0);
+        assertThat(growth.get(3).value()).isEqualByComparingTo("780");
     }
 
     @Test
@@ -182,11 +183,11 @@ class PortfolioGrowthServiceTest {
         List<PortfolioGrowthResponse> growth =
                 service.getPortfolioGrowthCustomRange(1L, DAY_1, DAY_4);
 
-        assertThat(growth.get(0).value()).isEqualTo(500.0);
-        assertThat(growth.get(1).value()).isEqualTo(550.0);
+        assertThat(growth.get(0).value()).isEqualByComparingTo("500");
+        assertThat(growth.get(1).value()).isEqualByComparingTo("550");
         // After full sell — should be 0
-        assertThat(growth.get(2).value()).isEqualTo(0.0);
-        assertThat(growth.get(3).value()).isEqualTo(0.0);
+        assertThat(growth.get(2).value()).isEqualByComparingTo("0");
+        assertThat(growth.get(3).value()).isEqualByComparingTo("0");
     }
 
     @Test
@@ -201,9 +202,9 @@ class PortfolioGrowthServiceTest {
         List<PortfolioGrowthResponse> growth =
                 service.getPortfolioGrowthCustomRange(1L, DAY_1, DAY_3);
 
-        assertThat(growth.get(0).value()).isEqualTo(1000.0);  // 10 * 100
-        assertThat(growth.get(1).value()).isEqualTo(1000.0);  // fallback to DAY_1
-        assertThat(growth.get(2).value()).isEqualTo(1300.0);  // 10 * 130
+        assertThat(growth.get(0).value()).isEqualByComparingTo("1000");  // 10 * 100
+        assertThat(growth.get(1).value()).isEqualByComparingTo("1000");  // fallback to DAY_1
+        assertThat(growth.get(2).value()).isEqualByComparingTo("1300");  // 10 * 130
     }
 
     @Test
@@ -219,7 +220,7 @@ class PortfolioGrowthServiceTest {
                 service.getPortfolioGrowthCustomRange(1L, DAY_1, DAY_1);
 
         // Only AAPL contributes: 10 * 100 = 1000. UNKNOWN excluded.
-        assertThat(growth.get(0).value()).isEqualTo(1000.0);
+        assertThat(growth.get(0).value()).isEqualByComparingTo("1000");
     }
 
     @Test

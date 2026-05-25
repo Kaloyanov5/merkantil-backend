@@ -7,10 +7,12 @@ import github.kaloyanov5.merkantil.entity.Transaction;
 import github.kaloyanov5.merkantil.repository.StockPriceHistoryRepository;
 import github.kaloyanov5.merkantil.repository.TransactionRepository;
 import github.kaloyanov5.merkantil.util.MarketCalendar;
+import github.kaloyanov5.merkantil.util.MoneyUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -52,12 +54,12 @@ public class PortfolioGrowthService {
                 tradingDays.size(), tradingDays.get(0), tradingDays.get(tradingDays.size() - 1));
 
         List<PortfolioGrowthResponse> growthData = new ArrayList<>();
-        Double lastKnownValue = 0.0;
+        BigDecimal lastKnownValue = BigDecimal.ZERO;
 
         // Step 2: For each trading day, reconstruct portfolio value
         for (LocalDate date : tradingDays) {
             try {
-                Double portfolioValue = reconstructPortfolioValueForDate(userId, date);
+                BigDecimal portfolioValue = reconstructPortfolioValueForDate(userId, date);
                 lastKnownValue = portfolioValue;
                 growthData.add(new PortfolioGrowthResponse(date, portfolioValue));
 
@@ -82,19 +84,19 @@ public class PortfolioGrowthService {
      * @param date The trading day to reconstruct for
      * @return The total portfolio value on that date
      */
-    private Double reconstructPortfolioValueForDate(Long userId, LocalDate date) {
+    private BigDecimal reconstructPortfolioValueForDate(Long userId, LocalDate date) {
         // Step 2.1: Reconstruct positions as of end of day
         Map<String, Integer> positions = reconstructPositionsAsOfDate(userId, date);
 
         if (positions.isEmpty()) {
             log.debug("No positions for user {} on {}", userId, date);
-            return 0.0;
+            return BigDecimal.ZERO;
         }
 
         log.debug("User {} positions on {}: {}", userId, date, positions);
 
         // Step 2.2 & 2.3: Resolve prices and calculate value
-        double totalValue = 0.0;
+        BigDecimal totalValue = BigDecimal.ZERO;
 
         for (Map.Entry<String, Integer> position : positions.entrySet()) {
             String symbol = position.getKey();
@@ -105,7 +107,7 @@ public class PortfolioGrowthService {
             }
 
             // Resolve historical close price for this date
-            Double closePrice = resolveHistoricalClosePrice(symbol, date);
+            BigDecimal closePrice = resolveHistoricalClosePrice(symbol, date);
 
             if (closePrice == null) {
                 log.warn("No historical price found for {} on or before {}. Excluding from portfolio value.",
@@ -113,13 +115,11 @@ public class PortfolioGrowthService {
                 continue; // Exclude symbol if no price data exists
             }
 
-            double positionValue = quantity * closePrice;
-            totalValue += positionValue;
+            BigDecimal positionValue = MoneyUtil.multiply(closePrice, quantity);
+            totalValue = totalValue.add(positionValue);
 
             log.debug("  {} | Qty: {} | Price: ${} | Value: ${}",
-                    symbol, quantity,
-                    String.format("%.2f", closePrice),
-                    String.format("%.2f", positionValue));
+                    symbol, quantity, closePrice, positionValue);
         }
 
         return totalValue;
@@ -167,12 +167,12 @@ public class PortfolioGrowthService {
      * @param date The date to get price for
      * @return The close price, or null if no historical data exists
      */
-    private Double resolveHistoricalClosePrice(String symbol, LocalDate date) {
+    private BigDecimal resolveHistoricalClosePrice(String symbol, LocalDate date) {
         Optional<StockPriceHistory> priceHistory = stockPriceHistoryRepository
                 .findMostRecentPriceOnOrBefore(symbol.toUpperCase(), date);
 
         if (priceHistory.isPresent()) {
-            Double closePrice = priceHistory.get().getClose();
+            BigDecimal closePrice = priceHistory.get().getClose();
             LocalDate priceDate = priceHistory.get().getDate();
 
             if (!priceDate.equals(date)) {
@@ -238,11 +238,11 @@ public class PortfolioGrowthService {
 
         List<LocalDate> tradingDays = getTradingDaysInRange(startDate, endDate);
         List<PortfolioGrowthResponse> growthData = new ArrayList<>();
-        Double lastKnownValue = 0.0;
+        BigDecimal lastKnownValue = BigDecimal.ZERO;
 
         for (LocalDate date : tradingDays) {
             try {
-                Double portfolioValue = reconstructPortfolioValueForDate(userId, date);
+                BigDecimal portfolioValue = reconstructPortfolioValueForDate(userId, date);
                 lastKnownValue = portfolioValue;
                 growthData.add(new PortfolioGrowthResponse(date, portfolioValue));
             } catch (Exception e) {

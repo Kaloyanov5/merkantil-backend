@@ -6,10 +6,12 @@ import github.kaloyanov5.merkantil.entity.Portfolio;
 import github.kaloyanov5.merkantil.entity.Stock;
 import github.kaloyanov5.merkantil.repository.PortfolioRepository;
 import github.kaloyanov5.merkantil.repository.StockRepository;
+import github.kaloyanov5.merkantil.util.MoneyUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,20 +41,24 @@ public class PortfolioService {
     public PortfolioSummary getPortfolioSummary(Long userId) {
         List<Portfolio> portfolios = portfolioRepository.findByUserId(userId);
 
-        double totalValue = 0.0;
-        double totalCost = 0.0;
+        BigDecimal totalValue = BigDecimal.ZERO;
+        BigDecimal totalCost = BigDecimal.ZERO;
 
         for (Portfolio portfolio : portfolios) {
-            Double currentPrice = getCurrentPrice(portfolio.getSymbol());
-            double positionValue = currentPrice != null ? portfolio.getQuantity() * currentPrice : 0.0;
-            double positionCost = portfolio.getQuantity() * portfolio.getAverageBuyPrice();
+            BigDecimal currentPrice = getCurrentPrice(portfolio.getSymbol());
+            BigDecimal positionValue = currentPrice != null
+                    ? MoneyUtil.multiply(currentPrice, portfolio.getQuantity()) : BigDecimal.ZERO;
+            BigDecimal positionCost = MoneyUtil.multiply(portfolio.getAverageBuyPrice(), portfolio.getQuantity());
 
-            totalValue += positionValue;
-            totalCost += positionCost;
+            totalValue = totalValue.add(positionValue);
+            totalCost = totalCost.add(positionCost);
         }
 
-        double totalGain = totalValue - totalCost;
-        double totalGainPercent = totalCost > 0 ? (totalGain / totalCost) * 100 : 0.0;
+        BigDecimal totalGain = totalValue.subtract(totalCost);
+        double totalGainPercent = MoneyUtil.isPositive(totalCost)
+                ? totalGain.divide(totalCost, 6, MoneyUtil.ROUNDING)
+                        .multiply(BigDecimal.valueOf(100)).doubleValue()
+                : 0.0;
 
         return new PortfolioSummary(
                 portfolios.size(),
@@ -76,7 +82,7 @@ public class PortfolioService {
     /**
      * Get current price for a stock
      */
-    private Double getCurrentPrice(String symbol) {
+    private BigDecimal getCurrentPrice(String symbol) {
         // First try to get from database (updated by scheduler)
         Stock stock = stockRepository.findBySymbol(symbol).orElse(null);
         if (stock != null && stock.getCurrentPrice() != null) {
@@ -86,7 +92,7 @@ public class PortfolioService {
         // Fallback to Massive API
         MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(symbol);
         if (snapshot != null && snapshot.getLastTrade() != null) {
-            return snapshot.getLastTrade().getPrice();
+            return MoneyUtil.of(snapshot.getLastTrade().getPrice());
         }
 
         log.warn("Unable to fetch current price for {}", symbol);
@@ -101,11 +107,15 @@ public class PortfolioService {
                 .map(Stock::getName)
                 .orElse(null);
 
-        Double currentPrice = getCurrentPrice(portfolio.getSymbol());
-        Double totalCost = portfolio.getQuantity() * portfolio.getAverageBuyPrice();
-        Double currentValue = currentPrice != null ? portfolio.getQuantity() * currentPrice : null;
-        Double unrealizedGain = currentValue != null ? currentValue - totalCost : null;
-        Double unrealizedGainPercent = (unrealizedGain != null && totalCost > 0) ? (unrealizedGain / totalCost) * 100 : null;
+        BigDecimal currentPrice = getCurrentPrice(portfolio.getSymbol());
+        BigDecimal totalCost = MoneyUtil.multiply(portfolio.getAverageBuyPrice(), portfolio.getQuantity());
+        BigDecimal currentValue = currentPrice != null
+                ? MoneyUtil.multiply(currentPrice, portfolio.getQuantity()) : null;
+        BigDecimal unrealizedGain = currentValue != null ? currentValue.subtract(totalCost) : null;
+        Double unrealizedGainPercent = (unrealizedGain != null && MoneyUtil.isPositive(totalCost))
+                ? unrealizedGain.divide(totalCost, 6, MoneyUtil.ROUNDING)
+                        .multiply(BigDecimal.valueOf(100)).doubleValue()
+                : null;
 
         return new PortfolioResponse(
                 portfolio.getId(),
@@ -124,9 +134,9 @@ public class PortfolioService {
     // Inner record class for portfolio summary
     public record PortfolioSummary(
             int totalPositions,
-            double totalValue,
-            double totalCost,
-            double totalGain,
+            BigDecimal totalValue,
+            BigDecimal totalCost,
+            BigDecimal totalGain,
             double totalGainPercent
     ) {
     }
