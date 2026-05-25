@@ -1,7 +1,6 @@
 package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.entity.User;
-import github.kaloyanov5.merkantil.exception.RateLimitedException;
 import github.kaloyanov5.merkantil.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.repository.UserRepository;
 import github.kaloyanov5.merkantil.dto.response.AuthResponse;
@@ -43,6 +42,7 @@ public class AuthService {
     private final PersistentTokenBasedRememberMeServices rememberMeServices;
     private final EmailService emailService;
     private final StringRedisTemplate redisTemplate;
+    private final RateLimiterService rateLimiterService;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -56,7 +56,6 @@ public class AuthService {
     private static final String TWO_FA_PENDING_PREFIX = "2fa:pending:";
     private static final Duration TWO_FA_TTL = Duration.ofMinutes(5);
 
-    private static final String ATTEMPT_PREFIX = "auth:attempts:";
     private static final int MAX_ATTEMPTS = 5;
     private static final Duration ATTEMPT_WINDOW = Duration.ofMinutes(15);
 
@@ -82,7 +81,7 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         String rateKey = "login:" + request.getEmail().toLowerCase();
-        checkRateLimit(rateKey);
+        rateLimiterService.check(rateKey, MAX_ATTEMPTS, ATTEMPT_WINDOW);
 
         Authentication authentication;
         try {
@@ -90,12 +89,12 @@ public class AuthService {
                     new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
             );
         } catch (BadCredentialsException e) {
-            incrementAttempts(rateKey);
+            rateLimiterService.penalize(rateKey, ATTEMPT_WINDOW);
             throw e;
         }
 
         // Password was correct — clear attempts even if 2FA is still pending
-        redisTemplate.delete(ATTEMPT_PREFIX + rateKey);
+        rateLimiterService.clear(rateKey);
 
         CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
         User user = userRepository.findById(principal.getId())
@@ -167,11 +166,11 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid or expired session, please log in again");
         }
 
-        checkRateLimit("2fa:" + userId);
+        rateLimiterService.check("2fa:" + userId, MAX_ATTEMPTS, ATTEMPT_WINDOW);
 
         String storedCode = redisTemplate.opsForValue().get(TWO_FA_OTP_PREFIX + userId);
         if (storedCode == null || !storedCode.equals(code)) {
-            incrementAttempts("2fa:" + userId);
+            rateLimiterService.penalize("2fa:" + userId, ATTEMPT_WINDOW);
             throw new IllegalArgumentException("Invalid or expired code");
         }
 
@@ -190,7 +189,7 @@ public class AuthService {
 
         redisTemplate.delete(TWO_FA_PENDING_PREFIX + tempToken);
         redisTemplate.delete(TWO_FA_OTP_PREFIX + userId);
-        redisTemplate.delete(ATTEMPT_PREFIX + "2fa:" + userId);
+        rateLimiterService.clear("2fa:" + userId);
 
         return new AuthResponse("Login successful", mapToUserResponse(user));
     }
@@ -221,12 +220,12 @@ public class AuthService {
 
     @Transactional
     public void resetPassword(String email, String code, String newPassword) {
-        checkRateLimit("reset:" + email);
+        rateLimiterService.check("reset:" + email, MAX_ATTEMPTS, ATTEMPT_WINDOW);
 
         String key = RESET_PREFIX + email;
         String storedCode = redisTemplate.opsForValue().get(key);
         if (storedCode == null || !storedCode.equals(code)) {
-            incrementAttempts("reset:" + email);
+            rateLimiterService.penalize("reset:" + email, ATTEMPT_WINDOW);
             throw new IllegalArgumentException("Invalid or expired reset code");
         }
         User user = userRepository.findByEmail(email)
@@ -234,7 +233,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
         redisTemplate.delete(key);
-        redisTemplate.delete(ATTEMPT_PREFIX + "reset:" + email);
+        rateLimiterService.clear("reset:" + email);
     }
 
     @Transactional
@@ -249,23 +248,6 @@ public class AuthService {
         user.setEmailVerified(true);
         userRepository.save(user);
         redisTemplate.delete(key);
-    }
-
-    private void checkRateLimit(String identifier) {
-        String key = ATTEMPT_PREFIX + identifier;
-        String attempts = redisTemplate.opsForValue().get(key);
-        if (attempts != null && Integer.parseInt(attempts) >= MAX_ATTEMPTS) {
-            Long ttl = redisTemplate.getExpire(key, java.util.concurrent.TimeUnit.SECONDS);
-            throw new RateLimitedException(ttl != null && ttl > 0 ? ttl : 0);
-        }
-    }
-
-    private void incrementAttempts(String identifier) {
-        String key = ATTEMPT_PREFIX + identifier;
-        Long count = redisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1) {
-            redisTemplate.expire(key, ATTEMPT_WINDOW);
-        }
     }
 
     private UserResponse mapToUserResponse(User user) {

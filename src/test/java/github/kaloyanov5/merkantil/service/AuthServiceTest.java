@@ -37,8 +37,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,6 +58,7 @@ class AuthServiceTest {
     @Mock private EmailService emailService;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOps;
+    @Mock private RateLimiterService rateLimiterService;
 
     @InjectMocks
     private AuthService authService;
@@ -123,9 +126,8 @@ class AuthServiceTest {
         req.setEmail("victim@example.com");
         req.setPassword("wrong");
 
-        when(valueOps.get("auth:attempts:login:victim@example.com")).thenReturn("5");
-        when(redisTemplate.getExpire(eq("auth:attempts:login:victim@example.com"), any()))
-                .thenReturn(600L);
+        doThrow(new RateLimitedException(600L))
+                .when(rateLimiterService).check(eq("login:victim@example.com"), anyInt(), any());
 
         assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse))
                 .isInstanceOf(RateLimitedException.class)
@@ -142,17 +144,14 @@ class AuthServiceTest {
         req.setEmail("user@example.com");
         req.setPassword("wrong");
 
-        when(valueOps.get(any())).thenReturn(null); // not rate-limited
         when(authenticationManager.authenticate(any()))
                 .thenThrow(new BadCredentialsException("Bad credentials"));
-        when(valueOps.increment("auth:attempts:login:user@example.com")).thenReturn(1L);
 
         assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse))
                 .isInstanceOf(BadCredentialsException.class);
 
-        verify(valueOps).increment("auth:attempts:login:user@example.com");
-        // First increment must also set TTL
-        verify(redisTemplate).expire(eq("auth:attempts:login:user@example.com"), any());
+        // Failed login must be recorded against the rate limiter
+        verify(rateLimiterService).penalize(eq("login:user@example.com"), any());
     }
 
     // ---------- 2FA ----------
@@ -204,15 +203,13 @@ class AuthServiceTest {
     @DisplayName("verify2fa: wrong code increments attempts and throws")
     void verify2fa_wrongCode_incrementsAttempts() {
         when(valueOps.get("2fa:pending:tok123")).thenReturn("7");
-        when(valueOps.get("auth:attempts:2fa:7")).thenReturn(null); // not rate-limited
         when(valueOps.get("2fa:otp:7")).thenReturn("000000"); // correct code
-        when(valueOps.increment("auth:attempts:2fa:7")).thenReturn(1L);
 
         assertThatThrownBy(() -> authService.verify2fa("tok123", "999999", httpRequest, httpResponse))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Invalid or expired code");
 
-        verify(valueOps).increment("auth:attempts:2fa:7");
+        verify(rateLimiterService).penalize(eq("2fa:7"), any());
     }
 
     // ---------- PASSWORD RESET ----------
@@ -243,8 +240,8 @@ class AuthServiceTest {
     @Test
     @DisplayName("resetPassword: rate-limited when too many wrong codes")
     void resetPassword_rateLimited_throws() {
-        when(valueOps.get("auth:attempts:reset:user@example.com")).thenReturn("5");
-        when(redisTemplate.getExpire(eq("auth:attempts:reset:user@example.com"), any())).thenReturn(300L);
+        doThrow(new RateLimitedException(300L))
+                .when(rateLimiterService).check(eq("reset:user@example.com"), anyInt(), any());
 
         assertThatThrownBy(() -> authService.resetPassword("user@example.com", "123456", "newpass"))
                 .isInstanceOf(RateLimitedException.class);
@@ -262,7 +259,6 @@ class AuthServiceTest {
         user.setBalance(BigDecimal.ZERO);
         user.setBanned(false);
 
-        when(valueOps.get("auth:attempts:reset:user@example.com")).thenReturn(null);
         when(valueOps.get("password:reset:user@example.com")).thenReturn("123456");
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("newpass")).thenReturn("newhash");
