@@ -7,7 +7,9 @@ import github.kaloyanov5.merkantil.entity.*;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import github.kaloyanov5.merkantil.repository.*;
+import github.kaloyanov5.merkantil.util.MoneyUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -29,12 +31,21 @@ public class OrderService {
     private final UserRepository userRepository;
     private final MassiveApiService massiveApiService;
     private final EmailService emailService;
+    private final RateLimiterService rateLimiterService;
+    private final MarketSessionService marketSessionService;
+
+    /** Maximum order placements allowed per user within {@link #ORDER_RATE_WINDOW}. */
+    private static final int MAX_ORDERS_PER_WINDOW = 10;
+    private static final Duration ORDER_RATE_WINDOW = Duration.ofMinutes(1);
 
     /**
      * Place a new order (BUY or SELL)
      */
     @Transactional
     public OrderResponse placeOrder(Long userId, OrderRequest request) {
+        // Throttle order placement per user to block automated bursts
+        rateLimiterService.enforce("order:" + userId, MAX_ORDERS_PER_WINDOW, ORDER_RATE_WINDOW);
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
@@ -53,7 +64,7 @@ public class OrderService {
         Side side = Side.valueOf(request.getSide().toUpperCase());
 
         if (orderType == OrderType.LIMIT) {
-            if (request.getLimitPrice() == null || request.getLimitPrice() <= 0) {
+            if (request.getLimitPrice() == null || request.getLimitPrice().signum() <= 0) {
                 throw new IllegalArgumentException("Limit price is required for LIMIT orders");
             }
             return side == Side.BUY
@@ -61,26 +72,45 @@ public class OrderService {
                     : placeLimitSellOrder(user, stock, request);
         }
 
-        Double executionPrice = getMarketPrice(stock);
+        // MARKET orders execute immediately, so they are only valid during
+        // regular trading hours. LIMIT orders are exempt — they are placed in
+        // any session and queue until their price condition is met.
+        String session = marketSessionService.getCurrentSession();
+        if (!"OPEN".equals(session)) {
+            throw new IllegalArgumentException(
+                    "The market is currently " + describeSession(session) + ". Market orders can only be "
+                            + "placed during regular trading hours (9:30 AM - 4:00 PM ET). Place a limit order instead.");
+        }
+
+        BigDecimal executionPrice = getMarketPrice(stock);
         return side == Side.BUY
                 ? executeBuyOrder(user, stock, request, executionPrice)
                 : executeSellOrder(user, stock, request, executionPrice);
+    }
+
+    /** Human-readable description of a non-OPEN market session for error messages. */
+    private String describeSession(String session) {
+        return switch (session) {
+            case "PRE_MARKET" -> "in pre-market";
+            case "AFTER_HOURS" -> "in after-hours";
+            case "HOLIDAY" -> "closed for a holiday";
+            default -> "closed";
+        };
     }
 
     /**
      * Place a LIMIT BUY order — reserves funds immediately, waits for price condition.
      */
     private OrderResponse placeLimitBuyOrder(User user, Stock stock, OrderRequest request) {
-        Double reserved = request.getLimitPrice() * request.getQuantity();
-        BigDecimal reservedDecimal = BigDecimal.valueOf(reserved);
+        BigDecimal reserved = MoneyUtil.multiply(request.getLimitPrice(), request.getQuantity());
 
-        if (user.getBalance().compareTo(reservedDecimal) < 0) {
+        if (user.getBalance().compareTo(reserved) < 0) {
             throw new IllegalArgumentException(
                     String.format("Insufficient funds. Required: $%.2f, Available: $%.2f",
                             reserved, user.getBalance()));
         }
 
-        user.setBalance(user.getBalance().subtract(reservedDecimal));
+        user.setBalance(user.getBalance().subtract(reserved));
         userRepository.save(user);
 
         Order order = new Order();
@@ -130,7 +160,7 @@ public class OrderService {
      * Execute an open LIMIT order — called by the scheduler when price condition is met.
      */
     @Transactional
-    public void executeLimitOrder(Order order, Double executionPrice) {
+    public void executeLimitOrder(Order order, BigDecimal executionPrice) {
         User user = order.getUser();
 
         if (order.getType() == Side.BUY) {
@@ -138,11 +168,11 @@ public class OrderService {
             updatePortfolioAfterBuy(user, order.getSymbol(), order.getQuantity(), executionPrice);
 
             // Refund the difference if executed below limit price
-            Double reserved = order.getLimitPrice() * order.getQuantity();
-            Double actualCost = executionPrice * order.getQuantity();
-            double refund = reserved - actualCost;
-            if (refund > 0) {
-                user.setBalance(user.getBalance().add(BigDecimal.valueOf(refund)));
+            BigDecimal reserved = MoneyUtil.multiply(order.getLimitPrice(), order.getQuantity());
+            BigDecimal actualCost = MoneyUtil.multiply(executionPrice, order.getQuantity());
+            BigDecimal refund = reserved.subtract(actualCost);
+            if (refund.signum() > 0) {
+                user.setBalance(user.getBalance().add(refund));
                 userRepository.save(user);
             }
         } else {
@@ -155,8 +185,8 @@ public class OrderService {
                 orderRepository.save(order);
                 return;
             }
-            Double revenue = executionPrice * order.getQuantity();
-            user.setBalance(user.getBalance().add(BigDecimal.valueOf(revenue)));
+            BigDecimal revenue = MoneyUtil.multiply(executionPrice, order.getQuantity());
+            user.setBalance(user.getBalance().add(revenue));
             userRepository.save(user);
             updatePortfolioAfterSell(user, portfolio, order.getQuantity());
         }
@@ -177,10 +207,11 @@ public class OrderService {
         log.info("LIMIT {} order {} filled: {} shares of {} at ${}",
                 order.getType(), order.getId(), order.getQuantity(), order.getSymbol(), executionPrice);
 
-        double totalValue = executionPrice * order.getQuantity();
-        double refund = order.getType() == Side.BUY
-                ? Math.max(0, order.getLimitPrice() * order.getQuantity() - totalValue)
-                : 0;
+        BigDecimal totalValue = MoneyUtil.multiply(executionPrice, order.getQuantity());
+        BigDecimal refund = order.getType() == Side.BUY
+                ? MoneyUtil.multiply(order.getLimitPrice(), order.getQuantity())
+                        .subtract(totalValue).max(BigDecimal.ZERO)
+                : BigDecimal.ZERO;
         try {
             emailService.sendLimitOrderFilledEmail(
                     user.getEmail(),
@@ -216,9 +247,9 @@ public class OrderService {
 
         // Refund reserved funds for BUY orders
         if (order.getType() == Side.BUY) {
-            Double refund = order.getLimitPrice() * order.getQuantity();
+            BigDecimal refund = MoneyUtil.multiply(order.getLimitPrice(), order.getQuantity());
             User user = order.getUser();
-            user.setBalance(user.getBalance().add(BigDecimal.valueOf(refund)));
+            user.setBalance(user.getBalance().add(refund));
             userRepository.save(user);
         }
 
@@ -232,12 +263,11 @@ public class OrderService {
     /**
      * Execute BUY order
      */
-    private OrderResponse executeBuyOrder(User user, Stock stock, OrderRequest request, Double executionPrice) {
-        Double totalCost = executionPrice * request.getQuantity();
-        BigDecimal totalCostDecimal = BigDecimal.valueOf(totalCost);
+    private OrderResponse executeBuyOrder(User user, Stock stock, OrderRequest request, BigDecimal executionPrice) {
+        BigDecimal totalCost = MoneyUtil.multiply(executionPrice, request.getQuantity());
 
         // Check if user has sufficient funds
-        if (user.getBalance().compareTo(totalCostDecimal) < 0) {
+        if (user.getBalance().compareTo(totalCost) < 0) {
             throw new IllegalArgumentException(
                     String.format("Insufficient funds. Required: $%.2f, Available: $%.2f",
                             totalCost, user.getBalance())
@@ -256,7 +286,7 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
 
         // Debit user balance
-        user.setBalance(user.getBalance().subtract(totalCostDecimal));
+        user.setBalance(user.getBalance().subtract(totalCost));
         userRepository.save(user);
 
         // Create transaction
@@ -281,7 +311,7 @@ public class OrderService {
     /**
      * Execute SELL order
      */
-    private OrderResponse executeSellOrder(User user, Stock stock, OrderRequest request, Double executionPrice) {
+    private OrderResponse executeSellOrder(User user, Stock stock, OrderRequest request, BigDecimal executionPrice) {
         // Check if user owns the stock
         Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), stock.getSymbol())
                 .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
@@ -294,8 +324,7 @@ public class OrderService {
             );
         }
 
-        Double totalRevenue = executionPrice * request.getQuantity();
-        BigDecimal totalRevenueDecimal = BigDecimal.valueOf(totalRevenue);
+        BigDecimal totalRevenue = MoneyUtil.multiply(executionPrice, request.getQuantity());
 
         // Create order
         Order order = new Order();
@@ -309,7 +338,7 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
 
         // Credit user balance
-        user.setBalance(user.getBalance().add(totalRevenueDecimal));
+        user.setBalance(user.getBalance().add(totalRevenue));
         userRepository.save(user);
 
         // Create transaction
@@ -334,7 +363,7 @@ public class OrderService {
     /**
      * Update portfolio after BUY
      */
-    private void updatePortfolioAfterBuy(User user, String symbol, Integer quantity, Double price) {
+    private void updatePortfolioAfterBuy(User user, String symbol, Integer quantity, BigDecimal price) {
         Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), symbol)
                 .orElse(new Portfolio());
 
@@ -343,12 +372,15 @@ public class OrderService {
             portfolio.setUser(user);
             portfolio.setSymbol(symbol);
             portfolio.setQuantity(quantity);
-            portfolio.setAverageBuyPrice(price);
+            portfolio.setAverageBuyPrice(MoneyUtil.scaled(price));
         } else {
-            // Update existing position (calculate new average)
-            Integer totalQuantity = portfolio.getQuantity() + quantity;
-            Double totalCost = (portfolio.getQuantity() * portfolio.getAverageBuyPrice()) + (quantity * price);
-            portfolio.setAverageBuyPrice(totalCost / totalQuantity);
+            // Update existing position — recompute the weighted-average buy price
+            int totalQuantity = portfolio.getQuantity() + quantity;
+            BigDecimal existingCost = MoneyUtil.multiply(portfolio.getAverageBuyPrice(), portfolio.getQuantity());
+            BigDecimal addedCost = MoneyUtil.multiply(price, quantity);
+            BigDecimal newAverage = MoneyUtil.divide(
+                    existingCost.add(addedCost), BigDecimal.valueOf(totalQuantity));
+            portfolio.setAverageBuyPrice(newAverage);
             portfolio.setQuantity(totalQuantity);
         }
 
@@ -375,21 +407,21 @@ public class OrderService {
     /**
      * Get current market price for MARKET orders.
      */
-    private Double getMarketPrice(Stock stock) {
+    private BigDecimal getMarketPrice(Stock stock) {
         MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
 
         if (snapshot != null) {
             if (snapshot.getLastTrade() != null && snapshot.getLastTrade().getPrice() != null
                     && snapshot.getLastTrade().getPrice() > 0) {
-                return snapshot.getLastTrade().getPrice();
+                return MoneyUtil.of(snapshot.getLastTrade().getPrice());
             }
             if (snapshot.getDay() != null && snapshot.getDay().getClose() != null
                     && snapshot.getDay().getClose() > 0) {
-                return snapshot.getDay().getClose();
+                return MoneyUtil.of(snapshot.getDay().getClose());
             }
         }
 
-        if (stock.getCurrentPrice() != null && stock.getCurrentPrice() > 0) {
+        if (MoneyUtil.isPositive(stock.getCurrentPrice())) {
             log.warn("Using DB price for {} — snapshot unavailable", stock.getSymbol());
             return stock.getCurrentPrice();
         }
@@ -414,7 +446,8 @@ public class OrderService {
     }
 
     private OrderResponse mapToOrderResponse(Order order) {
-        Double total = order.getAtPrice() != null ? order.getAtPrice() * order.getQuantity() : null;
+        BigDecimal total = order.getAtPrice() != null
+                ? MoneyUtil.multiply(order.getAtPrice(), order.getQuantity()) : null;
         return new OrderResponse(
                 order.getId(),
                 order.getSymbol(),

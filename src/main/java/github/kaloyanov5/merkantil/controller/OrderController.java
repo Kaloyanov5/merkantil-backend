@@ -3,6 +3,7 @@ package github.kaloyanov5.merkantil.controller;
 import github.kaloyanov5.merkantil.dto.request.OrderRequest;
 import github.kaloyanov5.merkantil.dto.response.OrderResponse;
 import github.kaloyanov5.merkantil.entity.User;
+import github.kaloyanov5.merkantil.exception.RateLimitedException;
 import github.kaloyanov5.merkantil.service.AuthService;
 import github.kaloyanov5.merkantil.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,6 +45,9 @@ public class OrderController {
             User user = authService.getCurrentUser();
             OrderResponse order = orderService.placeOrder(user.getId(), request);
             return ResponseEntity.status(HttpStatus.CREATED).body(order);
+        } catch (RateLimitedException e) {
+            // Let the global handler produce a 429 with a Retry-After header
+            throw e;
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {

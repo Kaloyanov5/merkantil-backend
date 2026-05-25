@@ -36,6 +36,8 @@ class OrderServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private MassiveApiService massiveApiService;
     @Mock private EmailService emailService;
+    @Mock private RateLimiterService rateLimiterService;
+    @Mock private MarketSessionService marketSessionService;
 
     @InjectMocks
     private OrderService orderService;
@@ -56,7 +58,7 @@ class OrderServiceTest {
         stock.setSymbol("AAPL");
         stock.setName("Apple Inc.");
         stock.setIsActive(true);
-        stock.setCurrentPrice(150.0);
+        stock.setCurrentPrice(new BigDecimal("150.00"));
 
         // Default stubs — referenced by most tests
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
@@ -67,6 +69,8 @@ class OrderServiceTest {
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
         when(portfolioRepository.save(any(Portfolio.class))).thenAnswer(inv -> inv.getArgument(0));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        // Default to regular trading hours so MARKET orders pass the session gate
+        when(marketSessionService.getCurrentSession()).thenReturn("OPEN");
     }
 
     private OrderRequest marketOrder(String side, int qty) {
@@ -84,7 +88,7 @@ class OrderServiceTest {
         req.setSide(side);
         req.setOrderType("LIMIT");
         req.setQuantity(qty);
-        req.setLimitPrice(limit);
+        req.setLimitPrice(BigDecimal.valueOf(limit));
         return req;
     }
 
@@ -107,7 +111,7 @@ class OrderServiceTest {
         OrderResponse response = orderService.placeOrder(1L, marketOrder("BUY", 10));
 
         assertThat(response.getStatus()).isEqualTo("FILLED");
-        assertThat(response.getExecutedPrice()).isEqualTo(150.0);
+        assertThat(response.getExecutedPrice()).isEqualByComparingTo("150.00");
         assertThat(response.getQuantity()).isEqualTo(10);
         // 10000 - (150 * 10) = 8500
         assertThat(user.getBalance()).isEqualByComparingTo("8500.00");
@@ -116,7 +120,7 @@ class OrderServiceTest {
         verify(portfolioRepository).save(portfolioCaptor.capture());
         Portfolio saved = portfolioCaptor.getValue();
         assertThat(saved.getQuantity()).isEqualTo(10);
-        assertThat(saved.getAverageBuyPrice()).isEqualTo(150.0);
+        assertThat(saved.getAverageBuyPrice()).isEqualByComparingTo("150.00");
     }
 
     @Test
@@ -141,7 +145,7 @@ class OrderServiceTest {
         existing.setUser(user);
         existing.setSymbol("AAPL");
         existing.setQuantity(10);
-        existing.setAverageBuyPrice(100.0);
+        existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(200.0);
         when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
@@ -150,7 +154,7 @@ class OrderServiceTest {
 
         // Weighted average: (10*100 + 10*200) / 20 = 150
         assertThat(existing.getQuantity()).isEqualTo(20);
-        assertThat(existing.getAverageBuyPrice()).isEqualTo(150.0);
+        assertThat(existing.getAverageBuyPrice()).isEqualByComparingTo("150.00");
     }
 
     // ---------- MARKET SELL ----------
@@ -163,7 +167,7 @@ class OrderServiceTest {
         existing.setUser(user);
         existing.setSymbol("AAPL");
         existing.setQuantity(10);
-        existing.setAverageBuyPrice(100.0);
+        existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(150.0);
         when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
@@ -185,7 +189,7 @@ class OrderServiceTest {
         existing.setUser(user);
         existing.setSymbol("AAPL");
         existing.setQuantity(5);
-        existing.setAverageBuyPrice(100.0);
+        existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(150.0);
         when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
@@ -203,7 +207,7 @@ class OrderServiceTest {
         existing.setUser(user);
         existing.setSymbol("AAPL");
         existing.setQuantity(2);
-        existing.setAverageBuyPrice(100.0);
+        existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(150.0);
         when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
@@ -258,6 +262,29 @@ class OrderServiceTest {
                 .hasMessageContaining("User not found");
     }
 
+    @Test
+    @DisplayName("market order: rejected when the market is not in regular trading hours")
+    void marketOrder_marketClosed_rejected() {
+        when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
+
+        assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("regular trading hours");
+
+        verify(orderRepository, never()).save(any());
+        verify(massiveApiService, never()).getSnapshot(any());
+    }
+
+    @Test
+    @DisplayName("market order: rejected during pre-market with a session-specific message")
+    void marketOrder_preMarket_rejected() {
+        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+
+        assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pre-market");
+    }
+
     // ---------- LIMIT ORDERS ----------
 
     @Test
@@ -270,6 +297,17 @@ class OrderServiceTest {
         // 10000 - 10 * 140 = 8600 reserved
         assertThat(user.getBalance()).isEqualByComparingTo("8600.00");
         verify(massiveApiService, never()).getSnapshot(any());
+    }
+
+    @Test
+    @DisplayName("LIMIT order: still accepted when the market is closed")
+    void limitOrder_marketClosed_stillAllowed() {
+        when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
+
+        OrderResponse response = orderService.placeOrder(1L, limitOrder("BUY", 10, 140.0));
+
+        assertThat(response.getStatus()).isEqualTo("OPEN");
+        assertThat(response.getOrderType()).isEqualTo("LIMIT");
     }
 
     @Test
@@ -303,7 +341,7 @@ class OrderServiceTest {
         existing.setUser(user);
         existing.setSymbol("AAPL");
         existing.setQuantity(2);
-        existing.setAverageBuyPrice(100.0);
+        existing.setAverageBuyPrice(new BigDecimal("100.00"));
         when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, limitOrder("SELL", 5, 200.0)))
@@ -325,7 +363,7 @@ class OrderServiceTest {
         placed.setSymbol("AAPL");
         placed.setType(Side.BUY);
         placed.setQuantity(10);
-        placed.setLimitPrice(140.0);
+        placed.setLimitPrice(BigDecimal.valueOf(140.0));
         placed.setOrderType(OrderType.LIMIT);
         placed.setStatus(OrderStatus.OPEN);
         when(orderRepository.findById(42L)).thenReturn(Optional.of(placed));
@@ -350,7 +388,7 @@ class OrderServiceTest {
         other.setOrderType(OrderType.LIMIT);
         other.setType(Side.BUY);
         other.setQuantity(10);
-        other.setLimitPrice(140.0);
+        other.setLimitPrice(BigDecimal.valueOf(140.0));
         when(orderRepository.findById(42L)).thenReturn(Optional.of(other));
 
         assertThatThrownBy(() -> orderService.cancelOrder(1L, 42L))
@@ -385,18 +423,18 @@ class OrderServiceTest {
         order.setSymbol("AAPL");
         order.setType(Side.BUY);
         order.setQuantity(10);
-        order.setLimitPrice(140.0); // reserved 1400
+        order.setLimitPrice(BigDecimal.valueOf(140.0)); // reserved 1400
         order.setOrderType(OrderType.LIMIT);
         order.setStatus(OrderStatus.OPEN);
 
         when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.empty());
 
         // Filled at 130 → actual cost 1300 → refund 100
-        orderService.executeLimitOrder(order, 130.0);
+        orderService.executeLimitOrder(order, new BigDecimal("130.0"));
 
         // 8600 + 100 refund = 8700
         assertThat(user.getBalance()).isEqualByComparingTo("8700.00");
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
-        assertThat(order.getAtPrice()).isEqualTo(130.0);
+        assertThat(order.getAtPrice()).isEqualByComparingTo("130.00");
     }
 }
