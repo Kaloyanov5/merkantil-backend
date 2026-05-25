@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 public class OrderRequest {
     @NotBlank(message = "Stock symbol is required")
@@ -20,5 +22,5 @@ public class OrderRequest {
     @NotNull(message = "Order type is required (MARKET/LIMIT)")
     private String orderType; // "MARKET" or "LIMIT"
 
-    private Double limitPrice; // Required if orderType is LIMIT
+    private BigDecimal limitPrice; // Required if orderType is LIMIT
 }

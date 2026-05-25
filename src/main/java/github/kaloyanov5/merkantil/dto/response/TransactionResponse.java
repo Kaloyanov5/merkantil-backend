@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -14,7 +15,7 @@ public class TransactionResponse {
     private String symbol;
     private String side;
     private Integer quantity;
-    private Double price;
-    private Double totalAmount;
+    private BigDecimal price;
+    private BigDecimal totalAmount;
     private LocalDateTime timestamp;
 }

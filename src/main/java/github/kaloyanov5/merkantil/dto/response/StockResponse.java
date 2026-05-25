@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -17,15 +18,15 @@ public class StockResponse {
     private String currency;
     private String sector;
     private String industry;
-    private Double currentPrice;
-    private Double previousClose;
-    private Double dayHigh;
-    private Double dayLow;
+    private BigDecimal currentPrice;
+    private BigDecimal previousClose;
+    private BigDecimal dayHigh;
+    private BigDecimal dayLow;
     private Long volume;
     private Double marketCap;
-    private Double changeAmount;  // currentPrice - previousClose
+    private BigDecimal changeAmount;  // currentPrice - previousClose
     private Double changePercent;  // (changeAmount / previousClose) * 100
-    private Double extendedHoursPrice;
+    private BigDecimal extendedHoursPrice;
     private Boolean isActive;
     private LocalDateTime lastUpdated;
 }
