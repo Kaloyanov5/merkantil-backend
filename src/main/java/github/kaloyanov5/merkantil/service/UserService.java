@@ -25,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Map;
 
 @Service
@@ -38,6 +39,11 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final LoginSessionService loginSessionService;
     private final EmailService emailService;
+    private final RateLimiterService rateLimiterService;
+
+    /** Throttle peer-to-peer transfers per sender. */
+    private static final int MAX_TRANSFERS_PER_WINDOW = 10;
+    private static final Duration TRANSFER_RATE_WINDOW = Duration.ofMinutes(1);
 
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request) {
@@ -176,22 +182,35 @@ public class UserService {
 
     @Transactional
     public BalanceResponse transfer(Long senderId, TransferRequest request) {
+        rateLimiterService.enforce("transfer:" + senderId, MAX_TRANSFERS_PER_WINDOW, TRANSFER_RATE_WINDOW);
+
         if (request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Transfer amount must be positive");
         }
 
-        User sender = userRepository.findById(senderId)
+        // Resolve recipient (unlocked) just to obtain the id for the lock-ordered fetch
+        User recipientLookup = userRepository.findByEmail(request.recipientEmail())
+                .orElseThrow(() -> new IllegalArgumentException("Recipient not found"));
+
+        if (senderId.equals(recipientLookup.getId())) {
+            throw new IllegalArgumentException("Cannot transfer funds to yourself");
+        }
+
+        // Acquire pessimistic locks in id order to avoid A->B / B->A deadlocks
+        Long firstId = Math.min(senderId, recipientLookup.getId());
+        Long secondId = Math.max(senderId, recipientLookup.getId());
+        User first = userRepository.findByIdForUpdate(firstId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        User second = userRepository.findByIdForUpdate(secondId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        User sender = firstId.equals(senderId) ? first : second;
+        User recipient = firstId.equals(senderId) ? second : first;
 
         if (Boolean.TRUE.equals(sender.getBanned())) {
             throw new IllegalArgumentException("Your account has been suspended");
         }
-
-        User recipient = userRepository.findByEmail(request.recipientEmail())
-                .orElseThrow(() -> new IllegalArgumentException("Recipient not found"));
-
-        if (sender.getId().equals(recipient.getId())) {
-            throw new IllegalArgumentException("Cannot transfer funds to yourself");
+        if (Boolean.TRUE.equals(recipient.getBanned())) {
+            throw new IllegalArgumentException("Recipient account is suspended");
         }
 
         if (sender.getBalance().compareTo(request.amount()) < 0) {
