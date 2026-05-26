@@ -37,7 +37,12 @@ public class CacheConfig implements CachingConfigurer {
                         RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer(mapper)));
 
         Map<String, RedisCacheConfiguration> cacheConfigurations = Map.of(
-                "news", defaultConfig.entryTtl(Duration.ofMinutes(5))
+                "news", defaultConfig.entryTtl(Duration.ofMinutes(5)),
+                // marketStatus gates MARKET-order acceptance; the default 1-minute
+                // TTL allowed up to ~60s of after-hours orders to slip through at
+                // session boundaries. 5s keeps the upstream call rate manageable
+                // while shrinking the boundary window to ~one snapshot tick.
+                "marketStatus", defaultConfig.entryTtl(Duration.ofSeconds(5))
         );
 
         return RedisCacheManager.builder(connectionFactory)
