@@ -88,9 +88,9 @@ class AuthServiceTest {
 
         AuthResponse response = authService.register(req);
 
-        assertThat(response.getMessage()).contains("verify");
-        assertThat(response.getUser().getEmail()).isEqualTo("ana@example.com");
-        assertThat(response.getUser().getBalance()).isEqualByComparingTo("10000");
+        assertThat(response.message()).contains("verify");
+        assertThat(response.user().email()).isEqualTo("ana@example.com");
+        assertThat(response.user().balance()).isEqualByComparingTo("10000");
 
         verify(emailService).sendVerificationEmail(eq("ana@example.com"), any(String.class));
         verify(valueOps).set(startsWith("email:verify:"), eq("42"), any());

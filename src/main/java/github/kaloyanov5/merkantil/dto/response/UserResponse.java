@@ -1,23 +1,17 @@
 package github.kaloyanov5.merkantil.dto.response;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-public class UserResponse {
-    private Long id;
-    private String firstName;
-    private String lastName;
-    private String email;
-    private BigDecimal balance;
-    private LocalDateTime createdAt;
-    private Boolean emailVerified;
-    private Boolean twoFactorEnabled;
-    private Boolean banned;
+public record UserResponse(
+        Long id,
+        String firstName,
+        String lastName,
+        String email,
+        BigDecimal balance,
+        LocalDateTime createdAt,
+        Boolean emailVerified,
+        Boolean twoFactorEnabled,
+        Boolean banned
+) {
 }

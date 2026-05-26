@@ -98,9 +98,9 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.placeOrder(1L, marketOrder("BUY", 10));
 
-        assertThat(response.getStatus()).isEqualTo("FILLED");
-        assertThat(response.getExecutedPrice()).isEqualByComparingTo("150.00");
-        assertThat(response.getQuantity()).isEqualTo(10);
+        assertThat(response.status()).isEqualTo("FILLED");
+        assertThat(response.executedPrice()).isEqualByComparingTo("150.00");
+        assertThat(response.quantity()).isEqualTo(10);
         // 10000 - (150 * 10) = 8500
         assertThat(user.getBalance()).isEqualByComparingTo("8500.00");
 
@@ -162,7 +162,7 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.placeOrder(1L, marketOrder("SELL", 4));
 
-        assertThat(response.getStatus()).isEqualTo("FILLED");
+        assertThat(response.status()).isEqualTo("FILLED");
         // 10000 + 4 * 150 = 10600
         assertThat(user.getBalance()).isEqualByComparingTo("10600.00");
         assertThat(existing.getQuantity()).isEqualTo(6);
@@ -280,8 +280,8 @@ class OrderServiceTest {
     void limitBuy_reservesFundsAndOpensOrder() {
         OrderResponse response = orderService.placeOrder(1L, limitOrder("BUY", 10, 140.0));
 
-        assertThat(response.getStatus()).isEqualTo("OPEN");
-        assertThat(response.getOrderType()).isEqualTo("LIMIT");
+        assertThat(response.status()).isEqualTo("OPEN");
+        assertThat(response.orderType()).isEqualTo("LIMIT");
         // 10000 - 10 * 140 = 8600 reserved
         assertThat(user.getBalance()).isEqualByComparingTo("8600.00");
         verify(massiveApiService, never()).getSnapshot(any());
@@ -294,8 +294,8 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.placeOrder(1L, limitOrder("BUY", 10, 140.0));
 
-        assertThat(response.getStatus()).isEqualTo("OPEN");
-        assertThat(response.getOrderType()).isEqualTo("LIMIT");
+        assertThat(response.status()).isEqualTo("OPEN");
+        assertThat(response.orderType()).isEqualTo("LIMIT");
     }
 
     @Test
@@ -357,7 +357,7 @@ class OrderServiceTest {
 
         OrderResponse cancelled = orderService.cancelOrder(1L, 42L);
 
-        assertThat(cancelled.getStatus()).isEqualTo("CANCELLED");
+        assertThat(cancelled.status()).isEqualTo("CANCELLED");
         // Reserved funds returned: balance back to 10000
         assertThat(user.getBalance()).isEqualByComparingTo("10000.00");
     }
