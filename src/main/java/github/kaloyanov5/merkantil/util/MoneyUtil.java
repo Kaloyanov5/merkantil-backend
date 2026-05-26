@@ -49,6 +49,17 @@ public final class MoneyUtil {
         return dividend.divide(divisor, SCALE, ROUNDING);
     }
 
+    /**
+     * Divides with banker's rounding (HALF_EVEN) at the money scale. Use for
+     * averaging / cost-basis computations where repeated HALF_UP rounding
+     * would introduce a small statistical bias in the user's favor (lower
+     * reported gain on sale). HALF_EVEN rounds ties to the nearest even
+     * digit, which is bias-free over many operations.
+     */
+    public static BigDecimal divideHalfEven(BigDecimal dividend, BigDecimal divisor) {
+        return dividend.divide(divisor, SCALE, RoundingMode.HALF_EVEN);
+    }
+
     /** True when {@code value} is non-null and strictly greater than zero. */
     public static boolean isPositive(BigDecimal value) {
         return value != null && value.signum() > 0;

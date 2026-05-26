@@ -416,7 +416,9 @@ public class OrderService {
             int totalQuantity = portfolio.getQuantity() + quantity;
             BigDecimal existingCost = MoneyUtil.multiply(portfolio.getAverageBuyPrice(), portfolio.getQuantity());
             BigDecimal addedCost = MoneyUtil.multiply(price, quantity);
-            BigDecimal newAverage = MoneyUtil.divide(
+            // HALF_EVEN (banker's rounding) prevents systematic upward drift
+            // of cost basis across many small buys — see MoneyUtil.divideHalfEven.
+            BigDecimal newAverage = MoneyUtil.divideHalfEven(
                     existingCost.add(addedCost), BigDecimal.valueOf(totalQuantity));
             portfolio.setAverageBuyPrice(newAverage);
             portfolio.setQuantity(totalQuantity);
