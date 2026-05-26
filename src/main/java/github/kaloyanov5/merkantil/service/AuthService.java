@@ -30,8 +30,11 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.UUID;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -104,8 +107,13 @@ public class AuthService {
         if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
             String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
             String tempToken = UUID.randomUUID().toString();
+            // Bind the temp-token to the requesting client IP so an attacker
+            // who intercepts the tempToken cannot redeem it from a different
+            // device/location. Stored as "<userId>|<clientIp>".
+            String clientIp = httpRequest.getRemoteAddr();
             redisTemplate.opsForValue().set(TWO_FA_OTP_PREFIX + user.getId(), code, TWO_FA_TTL);
-            redisTemplate.opsForValue().set(TWO_FA_PENDING_PREFIX + tempToken, user.getId().toString(), TWO_FA_TTL);
+            redisTemplate.opsForValue().set(TWO_FA_PENDING_PREFIX + tempToken,
+                    user.getId() + "|" + clientIp, TWO_FA_TTL);
             emailService.send2faEmail(user.getEmail(), code);
             throw new TwoFactorRequiredException(tempToken);
         }
@@ -161,8 +169,21 @@ public class AuthService {
     }
 
     public AuthResponse verify2fa(String tempToken, String code, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        String userId = redisTemplate.opsForValue().get(TWO_FA_PENDING_PREFIX + tempToken);
-        if (userId == null) {
+        String pending = redisTemplate.opsForValue().get(TWO_FA_PENDING_PREFIX + tempToken);
+        if (pending == null) {
+            throw new IllegalArgumentException("Invalid or expired session, please log in again");
+        }
+
+        // Stored format is "<userId>|<clientIp>". Reject the verify if the
+        // current client IP differs from the one that initiated the login —
+        // an intercepted tempToken cannot be redeemed from another device.
+        String[] parts = pending.split("\\|", 2);
+        String userId = parts[0];
+        String boundIp = parts.length > 1 ? parts[1] : null;
+        String currentIp = httpRequest.getRemoteAddr();
+        if (boundIp != null && !boundIp.equals(currentIp)) {
+            log.warn("2FA verify denied — tempToken bound to {} but request from {}", boundIp, currentIp);
+            redisTemplate.delete(TWO_FA_PENDING_PREFIX + tempToken);
             throw new IllegalArgumentException("Invalid or expired session, please log in again");
         }
 
