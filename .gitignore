@@ -42,6 +42,7 @@ build/
 massive-rest-docs.txt
 .env
 .claude/
+graphify-out/
 Дипломна Работа - Божидар Калоянов.pdf
 DEFENSE_ANSWERS.md
 FRONTEND_API_GUIDE.md
