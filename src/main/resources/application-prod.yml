@@ -1,0 +1,31 @@
+# Prod profile — HTTPS required, cross-site cookies allowed, TLS enforced.
+# Activate via: SPRING_PROFILES_ACTIVE=prod
+
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:merkantil_db}?sslMode=REQUIRED
+  data:
+    redis:
+      ssl:
+        enabled: true
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+        # 'none' is required when frontend and API are on different domains.
+        # Browsers require Secure=true with SameSite=none, which is why this
+        # profile flips both together.
+        same-site: none
+
+logging:
+  level:
+    github.kaloyanov5.merkantil: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN

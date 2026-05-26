@@ -1,0 +1,14 @@
+# Dev profile — local development (HTTP, same-origin or same-site frontend)
+# Activated by default via spring.profiles.active in application.yml
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false
+        same-site: lax
+
+logging:
+  level:
+    github.kaloyanov5.merkantil: DEBUG
+    org.springframework.security: INFO
