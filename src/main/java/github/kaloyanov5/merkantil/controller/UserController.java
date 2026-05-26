@@ -169,19 +169,21 @@ public class UserController {
     }
 
     @PostMapping("/{id}/deposit")
-    @Operation(summary = "Deposit funds", description = "Deposits the specified amount into the user's wallet. The authenticated user must match the path ID.")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Deposit funds (admin only)",
+            description = "Credits the specified user's wallet. Restricted to ADMIN until a real payment processor (PSP) is wired in; this endpoint will be reopened to end users once charges are settled through a PSP instead of credited unconditionally.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Deposit successful, updated balance returned"),
             @ApiResponse(responseCode = "400", description = "Invalid amount or payment method"),
-            @ApiResponse(responseCode = "401", description = "Not authenticated")
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
     public ResponseEntity<?> deposit(
             @PathVariable Long id,
             @Valid @RequestBody DepositRequest request
     ) {
         try {
-            User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.deposit(id, request.amount(), currentUser.getId(), request.paymentMethodId());
+            BalanceResponse balance = userService.deposit(id, request.amount(), request.paymentMethodId());
             return ResponseEntity.ok(Map.of(
                     "message", "Deposit successful",
                     "balance", balance
@@ -194,19 +196,21 @@ public class UserController {
     }
 
     @PostMapping("/{id}/withdraw")
-    @Operation(summary = "Withdraw funds", description = "Withdraws the specified amount from the user's wallet. The authenticated user must match the path ID.")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Withdraw funds (admin only)",
+            description = "Debits the specified user's wallet. Restricted to ADMIN until a real payout integration is wired in.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Withdrawal successful, updated balance returned"),
             @ApiResponse(responseCode = "400", description = "Invalid amount or insufficient funds"),
-            @ApiResponse(responseCode = "401", description = "Not authenticated")
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
     public ResponseEntity<?> withdraw(
             @PathVariable Long id,
             @Valid @RequestBody DepositRequest request
     ) {
         try {
-            User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.withdraw(id, request.amount(), currentUser.getId()); // paymentMethodId not used for withdrawals
+            BalanceResponse balance = userService.withdraw(id, request.amount());
             return ResponseEntity.ok(Map.of(
                     "message", "Withdrawal successful",
                     "balance", balance

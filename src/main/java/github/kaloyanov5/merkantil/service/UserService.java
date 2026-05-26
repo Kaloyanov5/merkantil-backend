@@ -99,10 +99,9 @@ public class UserService {
     private static final BigDecimal MAX_WITHDRAWAL = BigDecimal.valueOf(10_000);
 
     @Transactional
-    public BalanceResponse deposit(Long userId, BigDecimal amount, Long currentUserId, Long paymentMethodId) {
-        if (!userId.equals(currentUserId)) {
-            throw new IllegalArgumentException("You can only deposit to your own account");
-        }
+    public BalanceResponse deposit(Long userId, BigDecimal amount, Long paymentMethodId) {
+        // Endpoint is ROLE_ADMIN gated at the controller; no per-user self-match
+        // check here because admins credit any user's account.
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Deposit amount must be positive");
         }
@@ -110,7 +109,7 @@ public class UserService {
             throw new IllegalArgumentException("Deposit amount cannot exceed $25,000 per transaction");
         }
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (Boolean.TRUE.equals(user.getBanned())) {
@@ -142,10 +141,9 @@ public class UserService {
     }
 
     @Transactional
-    public BalanceResponse withdraw(Long userId, BigDecimal amount, Long currentUserId) {
-        if (!userId.equals(currentUserId)) {
-            throw new IllegalArgumentException("You can only withdraw from your own account");
-        }
+    public BalanceResponse withdraw(Long userId, BigDecimal amount) {
+        // Endpoint is ROLE_ADMIN gated at the controller; admins withdraw on
+        // behalf of any user, so no self-match check here.
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Withdrawal amount must be positive");
         }
@@ -153,7 +151,7 @@ public class UserService {
             throw new IllegalArgumentException("Withdrawal amount cannot exceed $10,000 per transaction");
         }
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (Boolean.TRUE.equals(user.getBanned())) {
