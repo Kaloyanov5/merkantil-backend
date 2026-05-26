@@ -10,6 +10,7 @@ import github.kaloyanov5.merkantil.dto.request.TwoFactorToggleRequest;
 import github.kaloyanov5.merkantil.dto.request.TwoFactorVerifyRequest;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
+import github.kaloyanov5.merkantil.util.ClientIpExtractor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -31,6 +32,7 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final ClientIpExtractor clientIpExtractor;
 
     @PostMapping("/register")
     @Operation(summary = "Register a new user", description = "Creates a new user account with the provided registration details and returns an authentication response")
@@ -40,7 +42,7 @@ public class AuthController {
     })
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         try {
-            AuthResponse response = authService.register(request, httpRequest.getRemoteAddr());
+            AuthResponse response = authService.register(request, clientIpExtractor.extract(httpRequest));
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -131,7 +133,7 @@ public class AuthController {
             @ApiResponse(responseCode = "200", description = "Reset code sent if email exists")
     })
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request, HttpServletRequest httpRequest) {
-        authService.forgotPassword(request.email(), httpRequest.getRemoteAddr());
+        authService.forgotPassword(request.email(), clientIpExtractor.extract(httpRequest));
         return ResponseEntity.ok(Map.of("message", "If that email is registered you will receive a reset code shortly"));
     }
 
@@ -158,7 +160,7 @@ public class AuthController {
     })
     public ResponseEntity<?> verifyEmail(@RequestParam String token, HttpServletRequest httpRequest) {
         try {
-            authService.verifyEmail(token, httpRequest.getRemoteAddr());
+            authService.verifyEmail(token, clientIpExtractor.extract(httpRequest));
             return ResponseEntity.ok(Map.of("message", "Email verified successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

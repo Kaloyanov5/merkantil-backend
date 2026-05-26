@@ -3,6 +3,7 @@ package github.kaloyanov5.merkantil.service;
 import github.kaloyanov5.merkantil.dto.response.LoginSessionResponse;
 import github.kaloyanov5.merkantil.entity.LoginSession;
 import github.kaloyanov5.merkantil.repository.LoginSessionRepository;
+import github.kaloyanov5.merkantil.util.ClientIpExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ public class LoginSessionService {
 
     private final LoginSessionRepository loginSessionRepository;
     private final SessionRepository<?> sessionRepository;
+    private final ClientIpExtractor clientIpExtractor;
 
     private final Parser uaParser = new Parser();
 
@@ -31,7 +33,7 @@ public class LoginSessionService {
         LoginSession session = new LoginSession();
         session.setUserId(userId);
         session.setSessionId(sessionId);
-        session.setIp(extractIp(request));
+        session.setIp(clientIpExtractor.extract(request));
         session.setDeviceInfo(parseUserAgent(request.getHeader("User-Agent")));
         loginSessionRepository.save(session);
     }
@@ -83,14 +85,6 @@ public class LoginSessionService {
     @Transactional
     public void deleteSession(String sessionId) {
         loginSessionRepository.deleteBySessionId(sessionId);
-    }
-
-    private String extractIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 
     private String parseUserAgent(String userAgent) {

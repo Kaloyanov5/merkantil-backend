@@ -8,6 +8,7 @@ import github.kaloyanov5.merkantil.dto.request.LoginRequest;
 import github.kaloyanov5.merkantil.dto.request.RegisterRequest;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.security.CustomUserDetails;
+import github.kaloyanov5.merkantil.util.ClientIpExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
@@ -46,6 +47,7 @@ public class AuthService {
     private final EmailService emailService;
     private final StringRedisTemplate redisTemplate;
     private final RateLimiterService rateLimiterService;
+    private final ClientIpExtractor clientIpExtractor;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -102,7 +104,7 @@ public class AuthService {
         // Per-IP throttle in parallel with the email-keyed limiter — blocks
         // credential-stuffing campaigns that rotate emails on a single IP and
         // attacker-driven lockout-by-burning-attempts of arbitrary victims.
-        String clientIp = httpRequest.getRemoteAddr();
+        String clientIp = clientIpExtractor.extract(httpRequest);
         if (clientIp != null) {
             rateLimiterService.enforce("login-ip:" + clientIp, MAX_LOGIN_PER_IP, LOGIN_IP_WINDOW);
         }
@@ -203,7 +205,7 @@ public class AuthService {
         String[] parts = pending.split("\\|", 2);
         String userId = parts[0];
         String boundIp = parts.length > 1 ? parts[1] : null;
-        String currentIp = httpRequest.getRemoteAddr();
+        String currentIp = clientIpExtractor.extract(httpRequest);
         if (boundIp != null && !boundIp.equals(currentIp)) {
             log.warn("2FA verify denied — tempToken bound to {} but request from {}", boundIp, currentIp);
             redisTemplate.delete(TWO_FA_PENDING_PREFIX + tempToken);

@@ -59,6 +59,7 @@ class AuthServiceTest {
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOps;
     @Mock private RateLimiterService rateLimiterService;
+    @Mock private github.kaloyanov5.merkantil.util.ClientIpExtractor clientIpExtractor;
 
     @InjectMocks
     private AuthService authService;
@@ -69,6 +70,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        when(clientIpExtractor.extract(any())).thenReturn("127.0.0.1");
     }
 
     // ---------- REGISTER ----------
