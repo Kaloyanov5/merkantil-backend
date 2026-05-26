@@ -38,6 +38,10 @@ public class OrderService {
     private static final int MAX_ORDERS_PER_WINDOW = 10;
     private static final Duration ORDER_RATE_WINDOW = Duration.ofMinutes(1);
 
+    /** Allowed deviation band for LIMIT prices vs the last-known market price (±50%). */
+    private static final BigDecimal LIMIT_PRICE_LOWER_BAND = new BigDecimal("0.5");
+    private static final BigDecimal LIMIT_PRICE_UPPER_BAND = new BigDecimal("1.5");
+
     /**
      * Place a new order (BUY or SELL)
      */
@@ -68,6 +72,20 @@ public class OrderService {
         if (orderType == OrderType.LIMIT) {
             if (request.limitPrice() == null || request.limitPrice().signum() <= 0) {
                 throw new IllegalArgumentException("Limit price is required for LIMIT orders");
+            }
+            // Reject limit prices wildly out of line with the last-known market
+            // price (defaults to ±50% band). This stops grief-fills like a SELL
+            // at $0.0001 firing instantly on the next tick or absurd-notional
+            // BUYs that would overflow DECIMAL(19,4) mid-transaction.
+            BigDecimal reference = stock.getCurrentPrice();
+            if (MoneyUtil.isPositive(reference)) {
+                BigDecimal lower = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_LOWER_BAND));
+                BigDecimal upper = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_UPPER_BAND));
+                if (request.limitPrice().compareTo(lower) < 0 || request.limitPrice().compareTo(upper) > 0) {
+                    throw new IllegalArgumentException(String.format(
+                            "Limit price $%s is outside the allowed range ($%s – $%s) for %s based on the last market price",
+                            request.limitPrice(), lower, upper, stock.getSymbol()));
+                }
             }
             return side == Side.BUY
                     ? placeLimitBuyOrder(user, stock, request)
