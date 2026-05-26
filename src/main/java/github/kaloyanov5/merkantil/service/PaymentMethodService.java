@@ -17,12 +17,22 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PaymentMethodService {
 
+    /** Maximum stored (non-deleted) payment methods per user. */
+    private static final int MAX_PAYMENT_METHODS_PER_USER = 5;
+
     private final PaymentMethodRepository paymentMethodRepository;
     private final UserRepository userRepository;
 
     public PaymentMethodResponse addPaymentMethod(Long userId, PaymentMethodRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        long existing = paymentMethodRepository.countByUserIdAndDeletedAtIsNull(userId);
+        if (existing >= MAX_PAYMENT_METHODS_PER_USER) {
+            throw new IllegalArgumentException(
+                    "You can store at most " + MAX_PAYMENT_METHODS_PER_USER
+                            + " payment methods. Remove one before adding another.");
+        }
 
         PaymentMethod pm = new PaymentMethod();
         pm.setUser(user);

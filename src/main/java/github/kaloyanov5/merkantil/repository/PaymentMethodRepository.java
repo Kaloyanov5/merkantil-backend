@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface PaymentMethodRepository extends JpaRepository<PaymentMethod, Long> {
     List<PaymentMethod> findByUserIdAndDeletedAtIsNull(Long userId);
     Optional<PaymentMethod> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
+    long countByUserIdAndDeletedAtIsNull(Long userId);
 }
