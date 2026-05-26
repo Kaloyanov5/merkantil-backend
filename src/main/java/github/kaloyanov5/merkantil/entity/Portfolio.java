@@ -40,5 +40,7 @@ public class Portfolio {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal averageBuyPrice;
 
-    // CURRENT VALUE
+    @Version
+    @Column(nullable = false)
+    private Long version;
 }

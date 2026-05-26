@@ -63,4 +63,8 @@ public class Order {
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime timestamp;
+
+    @Version
+    @Column(nullable = false)
+    private Long version;
 }
