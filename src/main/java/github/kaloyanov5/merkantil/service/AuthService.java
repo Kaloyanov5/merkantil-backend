@@ -216,15 +216,21 @@ public class AuthService {
     }
 
     @Transactional
-    public void enable2fa() {
+    public void enable2fa(String currentPassword) {
         User user = getCurrentUser();
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
         user.setTwoFactorEnabled(true);
         userRepository.save(user);
     }
 
     @Transactional
-    public void disable2fa() {
+    public void disable2fa(String currentPassword) {
         User user = getCurrentUser();
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
         user.setTwoFactorEnabled(false);
         userRepository.save(user);
     }

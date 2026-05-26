@@ -6,6 +6,7 @@ import github.kaloyanov5.merkantil.dto.request.ForgotPasswordRequest;
 import github.kaloyanov5.merkantil.dto.request.LoginRequest;
 import github.kaloyanov5.merkantil.dto.request.RegisterRequest;
 import github.kaloyanov5.merkantil.dto.request.ResetPasswordRequest;
+import github.kaloyanov5.merkantil.dto.request.TwoFactorToggleRequest;
 import github.kaloyanov5.merkantil.dto.request.TwoFactorVerifyRequest;
 import github.kaloyanov5.merkantil.dto.response.UserResponse;
 import github.kaloyanov5.merkantil.service.AuthService;
@@ -77,31 +78,39 @@ public class AuthController {
     }
 
     @PostMapping("/2fa/enable")
-    @Operation(summary = "Enable 2FA", description = "Enables two-factor authentication for the current user")
+    @Operation(summary = "Enable 2FA",
+            description = "Enables two-factor authentication for the current user. Requires re-entering the current password so a stolen session cookie cannot silently toggle 2FA.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "2FA enabled"),
+            @ApiResponse(responseCode = "400", description = "Current password incorrect"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> enable2fa() {
+    public ResponseEntity<?> enable2fa(@Valid @RequestBody TwoFactorToggleRequest request) {
         try {
-            authService.enable2fa();
+            authService.enable2fa(request.currentPassword());
             return ResponseEntity.ok(Map.of("message", "Two-factor authentication enabled"));
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
         }
     }
 
     @PostMapping("/2fa/disable")
-    @Operation(summary = "Disable 2FA", description = "Disables two-factor authentication for the current user")
+    @Operation(summary = "Disable 2FA",
+            description = "Disables two-factor authentication for the current user. Requires re-entering the current password.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "2FA disabled"),
+            @ApiResponse(responseCode = "400", description = "Current password incorrect"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> disable2fa() {
+    public ResponseEntity<?> disable2fa(@Valid @RequestBody TwoFactorToggleRequest request) {
         try {
-            authService.disable2fa();
+            authService.disable2fa(request.currentPassword());
             return ResponseEntity.ok(Map.of("message", "Two-factor authentication disabled"));
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
         }
     }
