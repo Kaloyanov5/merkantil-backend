@@ -400,7 +400,7 @@ public class StockPriceScheduler {
                         : currentPrice.compareTo(order.getLimitPrice()) >= 0;
 
                 if (conditionMet) {
-                    orderService.executeLimitOrder(order, currentPrice);
+                    orderService.executeLimitOrder(order.getId(), currentPrice);
                 }
             } catch (Exception e) {
                 log.error("Error checking limit order {}: {}", order.getId(), e.getMessage());

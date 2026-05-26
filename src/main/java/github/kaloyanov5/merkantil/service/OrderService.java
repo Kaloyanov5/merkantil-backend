@@ -46,7 +46,9 @@ public class OrderService {
         // Throttle order placement per user to block automated bursts
         rateLimiterService.enforce("order:" + userId, MAX_ORDERS_PER_WINDOW, ORDER_RATE_WINDOW);
 
-        User user = userRepository.findById(userId)
+        // Pessimistic-lock the user row so concurrent orders for the same user
+        // serialize on the balance read-modify-write.
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (Boolean.TRUE.equals(user.getBanned())) {
@@ -132,7 +134,7 @@ public class OrderService {
      * Place a LIMIT SELL order — validates shares exist, waits for price condition.
      */
     private OrderResponse placeLimitSellOrder(User user, Stock stock, OrderRequest request) {
-        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), stock.getSymbol())
+        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbolForUpdate(user.getId(), stock.getSymbol())
                 .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
 
         if (portfolio.getQuantity() < request.quantity()) {
@@ -158,10 +160,23 @@ public class OrderService {
 
     /**
      * Execute an open LIMIT order — called by the scheduler when price condition is met.
+     * Re-fetches the order with a pessimistic write lock and bails out if its
+     * status has changed since the scheduler picked it up (manual cancel,
+     * already filled by an earlier tick, etc.). The user and portfolio rows
+     * are also locked to serialize against concurrent placement/cancellation.
      */
     @Transactional
-    public void executeLimitOrder(Order order, BigDecimal executionPrice) {
-        User user = order.getUser();
+    public void executeLimitOrder(Long orderId, BigDecimal executionPrice) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+
+        if (order.getStatus() != OrderStatus.OPEN) {
+            log.debug("Skipping limit order {} — status is {}", orderId, order.getStatus());
+            return;
+        }
+
+        User user = userRepository.findByIdForUpdate(order.getUser().getId())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (order.getType() == Side.BUY) {
             // Funds already reserved — just update portfolio and create transaction
@@ -176,8 +191,9 @@ public class OrderService {
                 userRepository.save(user);
             }
         } else {
-            // SELL: check shares still exist (may have been sold manually)
-            Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), order.getSymbol())
+            // SELL: lock the portfolio and verify shares still exist (may have
+            // been sold manually between scheduler pick and lock acquisition).
+            Portfolio portfolio = portfolioRepository.findByUserIdAndSymbolForUpdate(user.getId(), order.getSymbol())
                     .orElse(null);
             if (portfolio == null || portfolio.getQuantity() < order.getQuantity()) {
                 log.warn("LIMIT SELL order {} cancelled — user no longer has enough shares", order.getId());
@@ -232,7 +248,9 @@ public class OrderService {
      */
     @Transactional
     public OrderResponse cancelOrder(Long userId, Long orderId) {
-        Order order = orderRepository.findById(orderId)
+        // Lock the order row first so a scheduler tick can't fill it between
+        // the status check and the cancellation write.
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found"));
 
         if (!order.getUser().getId().equals(userId)) {
@@ -245,10 +263,11 @@ public class OrderService {
             throw new IllegalArgumentException("Only limit orders can be cancelled");
         }
 
-        // Refund reserved funds for BUY orders
+        // Refund reserved funds for BUY orders — lock the user row first
         if (order.getType() == Side.BUY) {
+            User user = userRepository.findByIdForUpdate(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
             BigDecimal refund = MoneyUtil.multiply(order.getLimitPrice(), order.getQuantity());
-            User user = order.getUser();
             user.setBalance(user.getBalance().add(refund));
             userRepository.save(user);
         }
@@ -312,8 +331,9 @@ public class OrderService {
      * Execute SELL order
      */
     private OrderResponse executeSellOrder(User user, Stock stock, OrderRequest request, BigDecimal executionPrice) {
-        // Check if user owns the stock
-        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), stock.getSymbol())
+        // Check if user owns the stock (locked so concurrent SELL on the same
+        // position cannot both pass the quantity check).
+        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbolForUpdate(user.getId(), stock.getSymbol())
                 .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
 
         // Check if user has enough shares
@@ -364,7 +384,7 @@ public class OrderService {
      * Update portfolio after BUY
      */
     private void updatePortfolioAfterBuy(User user, String symbol, Integer quantity, BigDecimal price) {
-        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(user.getId(), symbol)
+        Portfolio portfolio = portfolioRepository.findByUserIdAndSymbolForUpdate(user.getId(), symbol)
                 .orElse(new Portfolio());
 
         if (portfolio.getId() == null) {

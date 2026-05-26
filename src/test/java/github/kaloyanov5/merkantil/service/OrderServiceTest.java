@@ -61,7 +61,7 @@ class OrderServiceTest {
         stock.setCurrentPrice(new BigDecimal("150.00"));
 
         // Default stubs — referenced by most tests
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         when(stockRepository.findBySymbol("AAPL")).thenReturn(Optional.of(stock));
         // orderRepository.save / transactionRepository.save / portfolioRepository.save
         // return the same object passed in — needed to set an id-less Order/Portfolio back to caller
@@ -94,7 +94,7 @@ class OrderServiceTest {
     @DisplayName("market BUY: debits balance and creates new portfolio position")
     void marketBuy_success_createsNewPosition() {
         stubMarketPrice(150.0);
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.empty());
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.empty());
 
         OrderResponse response = orderService.placeOrder(1L, marketOrder("BUY", 10));
 
@@ -136,7 +136,7 @@ class OrderServiceTest {
         existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(200.0);
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         orderService.placeOrder(1L, marketOrder("BUY", 10));
 
@@ -158,7 +158,7 @@ class OrderServiceTest {
         existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(150.0);
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         OrderResponse response = orderService.placeOrder(1L, marketOrder("SELL", 4));
 
@@ -180,7 +180,7 @@ class OrderServiceTest {
         existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(150.0);
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         orderService.placeOrder(1L, marketOrder("SELL", 5));
 
@@ -198,7 +198,7 @@ class OrderServiceTest {
         existing.setAverageBuyPrice(new BigDecimal("100.00"));
 
         stubMarketPrice(150.0);
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("SELL", 5)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -209,7 +209,7 @@ class OrderServiceTest {
     @DisplayName("market SELL: throws when user owns no shares")
     void marketSell_noPosition_throws() {
         stubMarketPrice(150.0);
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.empty());
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("SELL", 5)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -243,7 +243,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("unknown user id: throws")
     void unknownUser_throws() {
-        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+        when(userRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.placeOrder(99L, marketOrder("BUY", 1)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -329,7 +329,7 @@ class OrderServiceTest {
         existing.setSymbol("AAPL");
         existing.setQuantity(2);
         existing.setAverageBuyPrice(new BigDecimal("100.00"));
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.of(existing));
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, limitOrder("SELL", 5, 200.0)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -353,7 +353,7 @@ class OrderServiceTest {
         placed.setLimitPrice(BigDecimal.valueOf(140.0));
         placed.setOrderType(OrderType.LIMIT);
         placed.setStatus(OrderStatus.OPEN);
-        when(orderRepository.findById(42L)).thenReturn(Optional.of(placed));
+        when(orderRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(placed));
 
         OrderResponse cancelled = orderService.cancelOrder(1L, 42L);
 
@@ -376,7 +376,7 @@ class OrderServiceTest {
         other.setType(Side.BUY);
         other.setQuantity(10);
         other.setLimitPrice(BigDecimal.valueOf(140.0));
-        when(orderRepository.findById(42L)).thenReturn(Optional.of(other));
+        when(orderRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(other));
 
         assertThatThrownBy(() -> orderService.cancelOrder(1L, 42L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -391,7 +391,7 @@ class OrderServiceTest {
         filled.setUser(user);
         filled.setStatus(OrderStatus.FILLED);
         filled.setOrderType(OrderType.LIMIT);
-        when(orderRepository.findById(42L)).thenReturn(Optional.of(filled));
+        when(orderRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(filled));
 
         assertThatThrownBy(() -> orderService.cancelOrder(1L, 42L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -414,10 +414,11 @@ class OrderServiceTest {
         order.setOrderType(OrderType.LIMIT);
         order.setStatus(OrderStatus.OPEN);
 
-        when(portfolioRepository.findByUserIdAndSymbol(1L, "AAPL")).thenReturn(Optional.empty());
+        when(orderRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(order));
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.empty());
 
         // Filled at 130 → actual cost 1300 → refund 100
-        orderService.executeLimitOrder(order, new BigDecimal("130.0"));
+        orderService.executeLimitOrder(50L, new BigDecimal("130.0"));
 
         // 8600 + 100 refund = 8700
         assertThat(user.getBalance()).isEqualByComparingTo("8700.00");

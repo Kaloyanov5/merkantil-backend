@@ -5,17 +5,30 @@ import github.kaloyanov5.merkantil.entity.OrderStatus;
 import github.kaloyanov5.merkantil.entity.OrderType;
 import github.kaloyanov5.merkantil.entity.Side;
 import github.kaloyanov5.merkantil.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByUserIdOrderByTimestampDesc(Long userId);
+
+    /**
+     * Locked variant of {@code findById} used by cancel and limit-fill paths to
+     * serialize order-status transitions and prevent a manual cancel from
+     * racing the scheduler's fill (or two scheduler ticks from double-filling
+     * the same order).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
     // filter by order type
     List<Order> findByUserIdAndType(Long userId, Side type);
