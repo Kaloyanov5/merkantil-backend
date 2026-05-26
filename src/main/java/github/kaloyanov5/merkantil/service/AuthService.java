@@ -292,6 +292,11 @@ public class AuthService {
         userRepository.save(user);
         redisTemplate.delete(key);
         rateLimiterService.clear("reset:" + email);
+
+        // Kick attackers off any active sessions they may already hold — the
+        // whole point of resetting is to take the account back, but the user
+        // remained logged in on existing devices before this change.
+        loginSessionService.revokeAllSessions(user.getId());
     }
 
     @Transactional
