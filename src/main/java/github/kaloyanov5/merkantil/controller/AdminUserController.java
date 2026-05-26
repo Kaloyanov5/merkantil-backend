@@ -173,14 +173,14 @@ public class AdminUserController {
         long totalUsers = userRepository.count();
         long newUsersThisWeek = userRepository.countUsersCreatedAfter(LocalDateTime.now().minusDays(7));
         long totalTransactions = transactionRepository.count();
-        Double totalVolume = transactionRepository.sumTotalVolume();
+        java.math.BigDecimal totalVolume = transactionRepository.sumTotalVolume();
         long activeStocks = stockRepository.countByIsActiveTrue();
 
         return ResponseEntity.ok(Map.of(
                 "totalUsers", totalUsers,
                 "newUsersThisWeek", newUsersThisWeek,
                 "totalTransactions", totalTransactions,
-                "totalVolume", totalVolume != null ? totalVolume : 0.0,
+                "totalVolume", totalVolume != null ? totalVolume : java.math.BigDecimal.ZERO,
                 "activeStocks", activeStocks
         ));
     }

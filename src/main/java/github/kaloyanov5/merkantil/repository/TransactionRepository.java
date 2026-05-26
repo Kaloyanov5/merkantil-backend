@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,9 +46,11 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     Page<Transaction> findByUserId(Long userId, Pageable pageable);
     Page<Transaction> findByUserIdAndType(Long userId, Side type, Pageable pageable);
 
-    // analytics queries
+    // analytics queries — DECIMAL columns aggregated as BigDecimal to preserve
+    // ledger precision (the previous Double mapping lost the trailing scale
+    // and drifted from the stored row totals).
     @Query("SELECT SUM(t.totalAmount) FROM Transaction t WHERE t.user.id = :userId AND t.type = :side")
-    Double sumTotalAmountByUserIdAndType(@Param("userId") Long userId, @Param("side") Side side);
+    BigDecimal sumTotalAmountByUserIdAndType(@Param("userId") Long userId, @Param("side") Side side);
 
     @Query("SELECT SUM(t.quantity) FROM Transaction t WHERE t.user.id = :userId AND t.stockSymbol = :symbol AND t.type = :side")
     Integer sumQuantityByUserIdAndSymbolAndType(@Param("userId") Long userId, @Param("symbol") String symbol, @Param("side") Side side);
@@ -57,7 +60,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     Long countByUserId(@Param("userId") Long userId);
 
     @Query("SELECT COALESCE(SUM(t.totalAmount), 0) FROM Transaction t")
-    Double sumTotalVolume();
+    BigDecimal sumTotalVolume();
 
     /*
     Most traded stocks

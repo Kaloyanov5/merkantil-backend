@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -73,17 +74,17 @@ public class TransactionService {
     public TransactionStats getTransactionStats(Long userId) {
         Long totalTransactions = transactionRepository.countByUserId(userId);
 
-        Double totalBuyAmount = transactionRepository.sumTotalAmountByUserIdAndType(userId, Side.BUY);
-        Double totalSellAmount = transactionRepository.sumTotalAmountByUserIdAndType(userId, Side.SELL);
+        BigDecimal totalBuyAmount = transactionRepository.sumTotalAmountByUserIdAndType(userId, Side.BUY);
+        BigDecimal totalSellAmount = transactionRepository.sumTotalAmountByUserIdAndType(userId, Side.SELL);
 
-        totalBuyAmount = totalBuyAmount != null ? totalBuyAmount : 0.0;
-        totalSellAmount = totalSellAmount != null ? totalSellAmount : 0.0;
+        if (totalBuyAmount == null) totalBuyAmount = BigDecimal.ZERO;
+        if (totalSellAmount == null) totalSellAmount = BigDecimal.ZERO;
 
         return new TransactionStats(
                 totalTransactions,
                 totalBuyAmount,
                 totalSellAmount,
-                totalSellAmount - totalBuyAmount
+                totalSellAmount.subtract(totalBuyAmount)
         );
     }
 
@@ -99,12 +100,14 @@ public class TransactionService {
         );
     }
 
-    // Inner record class for transaction stats
+    // Inner record class for transaction stats. Money fields are BigDecimal
+    // end-to-end so the SUM aggregates preserve full DECIMAL(19,4) precision
+    // (the previous Double mapping silently truncated at the JPA boundary).
     public record TransactionStats(
             long totalCount,
-            double totalBought,
-            double totalSold,
-            double netAmount
+            BigDecimal totalBought,
+            BigDecimal totalSold,
+            BigDecimal netAmount
     ) {
     }
 }
