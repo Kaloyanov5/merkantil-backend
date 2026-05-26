@@ -121,7 +121,8 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "No user found with the given email")
     })
     public ResponseEntity<?> lookupByEmail(@RequestParam String email) {
-        Map<String, String> result = userService.lookupByEmail(email);
+        User currentUser = authService.getCurrentUser();
+        Map<String, String> result = userService.lookupByEmail(email, currentUser.getId());
         if (result == null) {
             return ResponseEntity.notFound().build();
         }

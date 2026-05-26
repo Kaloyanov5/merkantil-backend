@@ -45,6 +45,10 @@ public class UserService {
     private static final int MAX_TRANSFERS_PER_WINDOW = 10;
     private static final Duration TRANSFER_RATE_WINDOW = Duration.ofMinutes(1);
 
+    /** Caps directory-style email lookups per looking user (anti-enumeration). */
+    private static final int MAX_LOOKUPS_PER_WINDOW = 30;
+    private static final Duration LOOKUP_WINDOW = Duration.ofHours(1);
+
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request) {
         User user = userRepository.findById(userId)
@@ -69,7 +73,10 @@ public class UserService {
         loginSessionService.revokeAllSessions(user.getId());
     }
 
-    public Map<String, String> lookupByEmail(String email) {
+    public Map<String, String> lookupByEmail(String email, Long lookerId) {
+        // Aggressive per-caller throttle so a single logged-in attacker cannot
+        // iterate the userbase by email and harvest first/last-name PII.
+        rateLimiterService.enforce("lookup:" + lookerId, MAX_LOOKUPS_PER_WINDOW, LOOKUP_WINDOW);
         return userRepository.findByEmail(email)
                 .map(u -> Map.of("firstName", u.getFirstName(), "lastName", u.getLastName()))
                 .orElse(null);
