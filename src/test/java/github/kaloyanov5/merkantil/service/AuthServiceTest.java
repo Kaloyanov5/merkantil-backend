@@ -86,7 +86,7 @@ class AuthServiceTest {
             return u;
         });
 
-        AuthResponse response = authService.register(req);
+        AuthResponse response = authService.register(req, "127.0.0.1");
 
         assertThat(response.message()).contains("verify");
         assertThat(response.user().email()).isEqualTo("ana@example.com");
@@ -103,7 +103,7 @@ class AuthServiceTest {
 
         when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.register(req))
+        assertThatThrownBy(() -> authService.register(req, "127.0.0.1"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Email already exists");
 
@@ -207,7 +207,7 @@ class AuthServiceTest {
     void forgotPassword_unknownEmail_silentlySucceeds() {
         when(userRepository.existsByEmail("ghost@example.com")).thenReturn(false);
 
-        authService.forgotPassword("ghost@example.com");
+        authService.forgotPassword("ghost@example.com", "127.0.0.1");
 
         // No email sent, no Redis writes — does not reveal account existence
         verify(emailService, never()).sendPasswordResetEmail(any(), any());
@@ -219,7 +219,7 @@ class AuthServiceTest {
     void forgotPassword_knownEmail_sendsCode() {
         when(userRepository.existsByEmail("user@example.com")).thenReturn(true);
 
-        authService.forgotPassword("user@example.com");
+        authService.forgotPassword("user@example.com", "127.0.0.1");
 
         verify(emailService).sendPasswordResetEmail(eq("user@example.com"), any(String.class));
         verify(valueOps).set(eq("password:reset:user@example.com"), any(String.class), any());

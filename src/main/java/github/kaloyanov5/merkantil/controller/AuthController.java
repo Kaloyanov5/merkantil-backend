@@ -38,9 +38,9 @@ public class AuthController {
             @ApiResponse(responseCode = "201", description = "User registered successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid input or email already in use")
     })
-    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         try {
-            AuthResponse response = authService.register(request);
+            AuthResponse response = authService.register(request, httpRequest.getRemoteAddr());
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -130,8 +130,8 @@ public class AuthController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Reset code sent if email exists")
     })
-    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        authService.forgotPassword(request.email());
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request, HttpServletRequest httpRequest) {
+        authService.forgotPassword(request.email(), httpRequest.getRemoteAddr());
         return ResponseEntity.ok(Map.of("message", "If that email is registered you will receive a reset code shortly"));
     }
 
@@ -156,9 +156,9 @@ public class AuthController {
             @ApiResponse(responseCode = "200", description = "Email verified successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid or expired token")
     })
-    public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+    public ResponseEntity<?> verifyEmail(@RequestParam String token, HttpServletRequest httpRequest) {
         try {
-            authService.verifyEmail(token);
+            authService.verifyEmail(token, httpRequest.getRemoteAddr());
             return ResponseEntity.ok(Map.of("message", "Email verified successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

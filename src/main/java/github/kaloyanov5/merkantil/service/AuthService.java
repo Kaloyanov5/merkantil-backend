@@ -62,8 +62,24 @@ public class AuthService {
     private static final int MAX_ATTEMPTS = 5;
     private static final Duration ATTEMPT_WINDOW = Duration.ofMinutes(15);
 
+    /** Caps on auth-endpoint hits per source IP / per target email. */
+    private static final int MAX_LOGIN_PER_IP = 30;
+    private static final Duration LOGIN_IP_WINDOW = Duration.ofMinutes(15);
+    private static final int MAX_REGISTER_PER_IP = 5;
+    private static final Duration REGISTER_WINDOW = Duration.ofHours(1);
+    private static final int MAX_VERIFY_EMAIL_PER_IP = 10;
+    private static final Duration VERIFY_EMAIL_WINDOW = Duration.ofHours(1);
+    private static final int MAX_FORGOT_PER_EMAIL = 3;
+    private static final int MAX_FORGOT_PER_IP = 10;
+    private static final Duration FORGOT_WINDOW = Duration.ofHours(1);
+
     @Transactional
-    public AuthResponse register(RegisterRequest request) {
+    public AuthResponse register(RegisterRequest request, String clientIp) {
+        // Per-IP throttle to prevent scripted account-farms (each new user
+        // gets a $10k seeded balance, so creation has a real cost).
+        if (clientIp != null) {
+            rateLimiterService.enforce("register:" + clientIp, MAX_REGISTER_PER_IP, REGISTER_WINDOW);
+        }
         if (userRepository.existsByEmail(request.email())) {
             throw new IllegalArgumentException("Email already exists");
         }
@@ -83,6 +99,14 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        // Per-IP throttle in parallel with the email-keyed limiter — blocks
+        // credential-stuffing campaigns that rotate emails on a single IP and
+        // attacker-driven lockout-by-burning-attempts of arbitrary victims.
+        String clientIp = httpRequest.getRemoteAddr();
+        if (clientIp != null) {
+            rateLimiterService.enforce("login-ip:" + clientIp, MAX_LOGIN_PER_IP, LOGIN_IP_WINDOW);
+        }
+
         String rateKey = "login:" + request.email().toLowerCase();
         rateLimiterService.check(rateKey, MAX_ATTEMPTS, ATTEMPT_WINDOW);
 
@@ -110,10 +134,9 @@ public class AuthService {
             // Bind the temp-token to the requesting client IP so an attacker
             // who intercepts the tempToken cannot redeem it from a different
             // device/location. Stored as "<userId>|<clientIp>".
-            String clientIp = httpRequest.getRemoteAddr();
             redisTemplate.opsForValue().set(TWO_FA_OTP_PREFIX + user.getId(), code, TWO_FA_TTL);
             redisTemplate.opsForValue().set(TWO_FA_PENDING_PREFIX + tempToken,
-                    user.getId() + "|" + clientIp, TWO_FA_TTL);
+                    user.getId() + "|" + (clientIp != null ? clientIp : ""), TWO_FA_TTL);
             emailService.send2faEmail(user.getEmail(), code);
             throw new TwoFactorRequiredException(tempToken);
         }
@@ -235,7 +258,15 @@ public class AuthService {
         userRepository.save(user);
     }
 
-    public void forgotPassword(String email) {
+    public void forgotPassword(String email, String clientIp) {
+        // Throttle both per-email (block targeted inbox-bombing of a single
+        // user) and per-IP (block fan-out account-enumeration via timing
+        // signals on the email-send call).
+        rateLimiterService.enforce("forgot:" + email.toLowerCase(), MAX_FORGOT_PER_EMAIL, FORGOT_WINDOW);
+        if (clientIp != null) {
+            rateLimiterService.enforce("forgot-ip:" + clientIp, MAX_FORGOT_PER_IP, FORGOT_WINDOW);
+        }
+
         // Don't reveal whether the email exists — silently return if not found
         if (!userRepository.existsByEmail(email)) {
             return;
@@ -264,7 +295,11 @@ public class AuthService {
     }
 
     @Transactional
-    public void verifyEmail(String token) {
+    public void verifyEmail(String token, String clientIp) {
+        if (clientIp != null) {
+            // Cap brute-force attempts against the UUID-shaped verification token
+            rateLimiterService.enforce("verify-email:" + clientIp, MAX_VERIFY_EMAIL_PER_IP, VERIFY_EMAIL_WINDOW);
+        }
         String key = VERIFY_PREFIX + token;
         String userId = redisTemplate.opsForValue().get(key);
         if (userId == null) {
