@@ -42,10 +42,23 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
 
         User user = userRepository.findByEmail(email)
                 .map(existing -> {
-                    if (existing.getGoogleId() == null) {
-                        existing.setGoogleId(googleId);
-                        userRepository.save(existing);
+                    if (existing.getGoogleId() != null) {
+                        // Already linked — just return for login.
+                        return existing;
                     }
+                    // Local account exists but isn't linked yet. Only auto-link
+                    // when the local email was verified out-of-band — otherwise
+                    // this is a takeover vector: someone could have registered
+                    // locally with the victim's email and never verified, and a
+                    // Google sign-in by the real owner would attach to (and
+                    // grant access to) the imposter's account. See H2.
+                    if (!Boolean.TRUE.equals(existing.getEmailVerified())) {
+                        log.warn("OAuth login denied for {} — local account exists but email is not verified", email);
+                        throw new OAuth2AuthenticationException(
+                                "An unverified local account exists for this email. Please log in with your password and verify the email, or contact support to link Google manually.");
+                    }
+                    existing.setGoogleId(googleId);
+                    userRepository.save(existing);
                     return existing;
                 })
                 .orElseGet(() -> {
