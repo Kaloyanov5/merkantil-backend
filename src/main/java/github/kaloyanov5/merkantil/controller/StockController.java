@@ -10,21 +10,30 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/stocks")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "Stocks", description = "Endpoints for browsing stocks, retrieving quotes, price history, market movers and market status")
 public class StockController {
+
+    private static final Set<String> NEWS_ORDER_ALLOWED = Set.of("asc", "desc");
+    private static final Set<String> NEWS_SORT_ALLOWED = Set.of("published_utc");
 
     private final StockService stockService;
     private final NewsService newsService;
@@ -39,8 +48,8 @@ public class StockController {
             @ApiResponse(responseCode = "200", description = "Stocks returned successfully")
     })
     public ResponseEntity<Page<StockResponse>> getAllStocks(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(defaultValue = "symbol") String sortBy,
             @RequestParam(defaultValue = "ASC") String direction
     ) {
@@ -73,15 +82,9 @@ public class StockController {
             @ApiResponse(responseCode = "400", description = "Stock not found for the given symbol"),
             @ApiResponse(responseCode = "500", description = "Internal error while retrieving stock data")
     })
-    public ResponseEntity<?> getStockBySymbol(@PathVariable String symbol) {
-        try {
-            StockResponse stock = stockService.getStockBySymbol(symbol);
-            return ResponseEntity.ok(stock);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getClass().getSimpleName() + ": " + e.getMessage()));
-        }
+    public ResponseEntity<StockResponse> getStockBySymbol(@PathVariable String symbol) {
+        StockResponse stock = stockService.getStockBySymbol(symbol);
+        return ResponseEntity.ok(stock);
     }
 
     /**
@@ -94,13 +97,9 @@ public class StockController {
             @ApiResponse(responseCode = "200", description = "Quote returned successfully"),
             @ApiResponse(responseCode = "400", description = "Stock not found for the given symbol")
     })
-    public ResponseEntity<?> getQuote(@PathVariable String symbol) {
-        try {
-            StockQuoteResponse quote = stockService.getQuote(symbol);
-            return ResponseEntity.ok(quote);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<StockQuoteResponse> getQuote(@PathVariable String symbol) {
+        StockQuoteResponse quote = stockService.getQuote(symbol);
+        return ResponseEntity.ok(quote);
     }
 
     /**
@@ -114,19 +113,15 @@ public class StockController {
             @ApiResponse(responseCode = "400", description = "Empty or invalid search query")
     })
     public ResponseEntity<?> searchStocks(
-            @RequestParam String q,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam @Size(max = 100, message = "Query too long (max 100 chars)") String q,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size
     ) {
-        try {
-            if (q == null || q.trim().isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Search query required"));
-            }
-            Page<StockResponse> results = stockService.searchStocks(q, page, size);
-            return ResponseEntity.ok(results);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        if (q == null || q.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Search query required"));
         }
+        Page<StockResponse> results = stockService.searchStocks(q, page, size);
+        return ResponseEntity.ok(results);
     }
 
     /**
@@ -140,8 +135,8 @@ public class StockController {
     })
     public ResponseEntity<Page<StockResponse>> getStocksBySector(
             @PathVariable String sector,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         Page<StockResponse> stocks = stockService.getStocksBySector(sector, page, size);
         return ResponseEntity.ok(stocks);
@@ -171,7 +166,7 @@ public class StockController {
             @ApiResponse(responseCode = "200", description = "Top gainers returned successfully")
     })
     public ResponseEntity<List<StockResponse>> getTopGainers(
-            @RequestParam(defaultValue = "10") int limit
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int limit
     ) {
         List<StockResponse> gainers = stockService.getTopGainers(limit);
         return ResponseEntity.ok(gainers);
@@ -187,7 +182,7 @@ public class StockController {
             @ApiResponse(responseCode = "200", description = "Top losers returned successfully")
     })
     public ResponseEntity<List<StockResponse>> getTopLosers(
-            @RequestParam(defaultValue = "10") int limit
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int limit
     ) {
         List<StockResponse> losers = stockService.getTopLosers(limit);
         return ResponseEntity.ok(losers);
@@ -203,7 +198,7 @@ public class StockController {
             @ApiResponse(responseCode = "200", description = "Most active stocks returned successfully")
     })
     public ResponseEntity<List<StockResponse>> getMostActive(
-            @RequestParam(defaultValue = "10") int limit
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int limit
     ) {
         List<StockResponse> active = stockService.getMostActive(limit);
         return ResponseEntity.ok(active);
@@ -218,17 +213,13 @@ public class StockController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Price history returned successfully (empty list if no data found)")
     })
-    public ResponseEntity<?> getStockHistory(
+    public ResponseEntity<List<StockHistoryResponse>> getStockHistory(
             @PathVariable String symbol,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
-        try {
-            List<StockHistoryResponse> history = stockService.getStockHistory(symbol, startDate, endDate);
-            return ResponseEntity.ok(history);
-        } catch (Exception e) {
-            return ResponseEntity.ok(List.of());
-        }
+        List<StockHistoryResponse> history = stockService.getStockHistory(symbol, startDate, endDate);
+        return ResponseEntity.ok(history);
     }
 
     /**
@@ -243,20 +234,19 @@ public class StockController {
             @ApiResponse(responseCode = "500", description = "Failed to fetch news from upstream API")
     })
     public ResponseEntity<?> getNews(
-            @RequestParam(required = false) String ticker,
-            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) @Size(max = 10) String ticker,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(50) int limit,
             @RequestParam(defaultValue = "desc") String order,
             @RequestParam(defaultValue = "published_utc") String sort
     ) {
-        if (limit > 50) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Limit cannot exceed 50"));
+        if (!NEWS_ORDER_ALLOWED.contains(order)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "order must be one of " + NEWS_ORDER_ALLOWED));
         }
-        try {
-            List<NewsArticleResponse> news = newsService.getNews(ticker, limit, order, sort);
-            return ResponseEntity.ok(news);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        if (!NEWS_SORT_ALLOWED.contains(sort)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "sort must be one of " + NEWS_SORT_ALLOWED));
         }
+        List<NewsArticleResponse> news = newsService.getNews(ticker, limit, order, sort);
+        return ResponseEntity.ok(news);
     }
 
     /**
@@ -271,19 +261,15 @@ public class StockController {
             @ApiResponse(responseCode = "400", description = "Symbols list is missing, empty or exceeds the 30-symbol limit")
     })
     public ResponseEntity<?> getMultipleQuotes(@RequestBody Map<String, List<String>> request) {
-        try {
-            List<String> symbols = request.get("symbols");
-            if (symbols == null || symbols.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Symbols list is required"));
-            }
-            if (symbols.size() > 30) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Maximum 30 symbols allowed"));
-            }
-
-            List<StockQuoteResponse> quotes = stockService.getMultipleQuotes(symbols);
-            return ResponseEntity.ok(quotes);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        List<String> symbols = request.get("symbols");
+        if (symbols == null || symbols.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Symbols list is required"));
         }
+        if (symbols.size() > 30) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Maximum 30 symbols allowed"));
+        }
+
+        List<StockQuoteResponse> quotes = stockService.getMultipleQuotes(symbols);
+        return ResponseEntity.ok(quotes);
     }
 }

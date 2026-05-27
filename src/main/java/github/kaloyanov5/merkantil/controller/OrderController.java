@@ -3,7 +3,6 @@ package github.kaloyanov5.merkantil.controller;
 import github.kaloyanov5.merkantil.dto.request.OrderRequest;
 import github.kaloyanov5.merkantil.dto.response.OrderResponse;
 import github.kaloyanov5.merkantil.entity.User;
-import github.kaloyanov5.merkantil.exception.RateLimitedException;
 import github.kaloyanov5.merkantil.service.AuthService;
 import github.kaloyanov5.merkantil.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -11,17 +10,19 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "Orders", description = "Endpoints for placing stock buy/sell orders and retrieving order history for the authenticated user")
 public class OrderController {
 
@@ -40,23 +41,10 @@ public class OrderController {
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "500", description = "Failed to place order due to an internal error")
     })
-    public ResponseEntity<?> placeOrder(@Valid @RequestBody OrderRequest request) {
-        try {
-            User user = authService.getCurrentUser();
-            OrderResponse order = orderService.placeOrder(user.getId(), request);
-            return ResponseEntity.status(HttpStatus.CREATED).body(order);
-        } catch (RateLimitedException e) {
-            // Let the global handler produce a 429 with a Retry-After header
-            throw e;
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to place order: " + e.getMessage()));
-        }
+    public ResponseEntity<OrderResponse> placeOrder(@Valid @RequestBody OrderRequest request) {
+        User user = authService.getCurrentUser();
+        OrderResponse order = orderService.placeOrder(user.getId(), request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(order);
     }
 
     /**
@@ -69,18 +57,13 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "Order history returned successfully"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> getUserOrders(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+    public ResponseEntity<Page<OrderResponse>> getUserOrders(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            User user = authService.getCurrentUser();
-            Page<OrderResponse> orders = orderService.getUserOrders(user.getId(), page, size);
-            return ResponseEntity.ok(orders);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        Page<OrderResponse> orders = orderService.getUserOrders(user.getId(), page, size);
+        return ResponseEntity.ok(orders);
     }
 
     /**
@@ -94,17 +77,10 @@ public class OrderController {
             @ApiResponse(responseCode = "400", description = "Order not found, not cancellable, or does not belong to user"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> cancelOrder(@PathVariable Long id) {
-        try {
-            User user = authService.getCurrentUser();
-            OrderResponse order = orderService.cancelOrder(user.getId(), id);
-            return ResponseEntity.ok(order);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+    public ResponseEntity<OrderResponse> cancelOrder(@PathVariable Long id) {
+        User user = authService.getCurrentUser();
+        OrderResponse order = orderService.cancelOrder(user.getId(), id);
+        return ResponseEntity.ok(order);
     }
 
     /**
@@ -117,19 +93,14 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "Orders for the symbol returned successfully"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> getUserOrdersBySymbol(
+    public ResponseEntity<Page<OrderResponse>> getUserOrdersBySymbol(
             @PathVariable String symbol,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            User user = authService.getCurrentUser();
-            Page<OrderResponse> orders = orderService.getUserOrdersBySymbol(
-                    user.getId(), symbol.toUpperCase(), page, size);
-            return ResponseEntity.ok(orders);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        Page<OrderResponse> orders = orderService.getUserOrdersBySymbol(
+                user.getId(), symbol.toUpperCase(), page, size);
+        return ResponseEntity.ok(orders);
     }
 }

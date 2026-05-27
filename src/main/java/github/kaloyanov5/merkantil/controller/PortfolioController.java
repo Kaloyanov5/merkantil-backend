@@ -40,15 +40,10 @@ public class PortfolioController {
             @ApiResponse(responseCode = "200", description = "Portfolio returned successfully"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> getUserPortfolio() {
-        try {
-            User user = authService.getCurrentUser();
-            List<PortfolioResponse> portfolio = portfolioService.getUserPortfolio(user.getId());
-            return ResponseEntity.ok(portfolio);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+    public ResponseEntity<List<PortfolioResponse>> getUserPortfolio() {
+        User user = authService.getCurrentUser();
+        List<PortfolioResponse> portfolio = portfolioService.getUserPortfolio(user.getId());
+        return ResponseEntity.ok(portfolio);
     }
 
     /**
@@ -61,15 +56,10 @@ public class PortfolioController {
             @ApiResponse(responseCode = "200", description = "Portfolio summary returned successfully"),
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
-    public ResponseEntity<?> getPortfolioSummary() {
-        try {
-            User user = authService.getCurrentUser();
-            PortfolioService.PortfolioSummary summary = portfolioService.getPortfolioSummary(user.getId());
-            return ResponseEntity.ok(summary);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+    public ResponseEntity<PortfolioService.PortfolioSummary> getPortfolioSummary() {
+        User user = authService.getCurrentUser();
+        PortfolioService.PortfolioSummary summary = portfolioService.getPortfolioSummary(user.getId());
+        return ResponseEntity.ok(summary);
     }
 
     /**
@@ -89,11 +79,9 @@ public class PortfolioController {
             PortfolioResponse position = portfolioService.getPosition(user.getId(), symbol);
             return ResponseEntity.ok(position);
         } catch (IllegalArgumentException e) {
+            // Preserve semantic mapping: position-not-found is 404, not 400
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
         }
     }
 
@@ -112,19 +100,11 @@ public class PortfolioController {
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "500", description = "Failed to calculate portfolio growth")
     })
-    public ResponseEntity<?> getPortfolioGrowth() {
-        try {
-            User user = authService.getCurrentUser();
-            List<PortfolioGrowthResponse> growth = portfolioGrowthService
-                    .getPortfolioGrowth30Days(user.getId());
-            return ResponseEntity.ok(growth);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to calculate portfolio growth: " + e.getMessage()));
-        }
+    public ResponseEntity<List<PortfolioGrowthResponse>> getPortfolioGrowth() {
+        User user = authService.getCurrentUser();
+        List<PortfolioGrowthResponse> growth = portfolioGrowthService
+                .getPortfolioGrowth30Days(user.getId());
+        return ResponseEntity.ok(growth);
     }
 
     /**
@@ -146,23 +126,13 @@ public class PortfolioController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
-        try {
-            User user = authService.getCurrentUser();
-
-            if (startDate.isAfter(endDate)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Start date must be before or equal to end date"));
-            }
-
-            List<PortfolioGrowthResponse> growth = portfolioGrowthService
-                    .getPortfolioGrowthCustomRange(user.getId(), startDate, endDate);
-            return ResponseEntity.ok(growth);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to calculate portfolio growth: " + e.getMessage()));
+        if (startDate.isAfter(endDate)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Start date must be before or equal to end date"));
         }
+        User user = authService.getCurrentUser();
+        List<PortfolioGrowthResponse> growth = portfolioGrowthService
+                .getPortfolioGrowthCustomRange(user.getId(), startDate, endDate);
+        return ResponseEntity.ok(growth);
     }
 }
