@@ -1,6 +1,7 @@
 package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.dto.massive.*;
+import github.kaloyanov5.merkantil.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -8,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -20,6 +22,7 @@ import java.util.stream.Collectors;
 public class MassiveApiService {
 
     private final WebClient client;
+    private final URI baseUri;
 
     @Value("${massive.api.key}")
     private String apiKey;
@@ -28,6 +31,7 @@ public class MassiveApiService {
             @Value("${massive.api.base-url}") String baseUrl,
             @Value("${massive.api.timeout}") int timeout
     ) {
+        this.baseUri = URI.create(baseUrl);
         this.client = WebClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -35,6 +39,23 @@ public class MassiveApiService {
                         .defaultCodecs()
                         .maxInMemorySize(16 * 1024 * 1024)) // 16MB for large responses
                 .build();
+    }
+
+    /**
+     * Defend against SSRF: only follow paginated next_url values that point at the
+     * configured Massive base host with the same scheme. Anything else is dropped.
+     */
+    private boolean isAllowedNextUrl(String url) {
+        try {
+            URI candidate = URI.create(url);
+            if (!candidate.isAbsolute()) return false;
+            return baseUri.getScheme().equalsIgnoreCase(candidate.getScheme())
+                    && baseUri.getHost() != null
+                    && baseUri.getHost().equalsIgnoreCase(candidate.getHost())
+                    && baseUri.getPort() == candidate.getPort();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     // ========================
@@ -47,7 +68,7 @@ public class MassiveApiService {
      */
     public MassiveSnapshotTicker getSnapshot(String symbol) {
         try {
-            log.info("Fetching snapshot for: {}", symbol);
+            log.info("Fetching snapshot for: {}", LogSanitizer.safe(symbol));
 
             MassiveSnapshotResponse response = client.get()
                     .uri(uriBuilder -> uriBuilder
@@ -96,7 +117,7 @@ public class MassiveApiService {
             String tickersParam = symbols.stream()
                     .map(String::toUpperCase)
                     .collect(Collectors.joining(","));
-            log.info("Fetching snapshots for: {}", tickersParam);
+            log.info("Fetching snapshots for: {}", LogSanitizer.safe(tickersParam));
 
             MassiveMultiSnapshotResponse response = client.get()
                     .uri(uriBuilder -> uriBuilder
@@ -245,6 +266,10 @@ public class MassiveApiService {
                 MassiveTickerListResponse response;
 
                 if (nextUrl != null) {
+                    if (!isAllowedNextUrl(nextUrl)) {
+                        log.warn("Refusing to follow next_url outside Massive base host: {}", nextUrl);
+                        break;
+                    }
                     // next_url already contains apiKey, fetch directly
                     final String url = nextUrl;
                     response = client.get()
@@ -435,7 +460,7 @@ public class MassiveApiService {
      */
     public MassiveNewsResponse getNews(String ticker, Integer limit, String order, String sort) {
         try {
-            log.info("Fetching news: ticker={}, limit={}", ticker, limit);
+            log.info("Fetching news: ticker={}, limit={}", LogSanitizer.safe(ticker), limit);
 
             MassiveNewsResponse response = client.get()
                     .uri(uriBuilder -> {
