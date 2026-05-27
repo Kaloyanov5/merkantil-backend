@@ -1,21 +1,29 @@
 package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.exception.RateLimitedException;
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * Centralized rate limiting backed by a Redis counter, with an in-memory
  * fallback that engages automatically whenever Redis is unreachable. A Redis
  * outage therefore degrades rate limiting to per-instance counting instead of
- * failing the request.
+ * failing the request — except for key prefixes listed in
+ * {@code ratelimit.fail-closed-prefixes}, which fail closed (deny) when Redis
+ * is unreachable. Sensitive flows such as login, 2FA and password reset should
+ * be enrolled in fail-closed so a Redis outage cannot relax their brute-force
+ * protection.
  *
  * <p>Two usage patterns are supported:
  * <ul>
@@ -30,11 +38,11 @@ import java.util.concurrent.TimeUnit;
  * a cluster; this is an accepted limitation for a single-instance deployment.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class RateLimiterService {
 
     private final StringRedisTemplate redisTemplate;
+    private final Set<String> failClosedPrefixes;
 
     private static final String PREFIX = "ratelimit:";
 
@@ -43,6 +51,22 @@ public class RateLimiterService {
 
     /** In-memory fallback counters, keyed by the same key used in Redis. */
     private final ConcurrentHashMap<String, Counter> memoryStore = new ConcurrentHashMap<>();
+
+    public RateLimiterService(
+            StringRedisTemplate redisTemplate,
+            @Value("${ratelimit.fail-closed-prefixes:login:,2fa:,password-reset:,lookup-email:}") List<String> failClosedPrefixes
+    ) {
+        this.redisTemplate = redisTemplate;
+        this.failClosedPrefixes = failClosedPrefixes.stream()
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    @PostConstruct
+    void logConfig() {
+        log.info("RateLimiter fail-closed prefixes: {}", failClosedPrefixes);
+    }
 
     // ───────────────────────────── Throughput limiting ─────────────────────────────
 
@@ -61,7 +85,7 @@ public class RateLimiterService {
 
     /** Throws {@link RateLimitedException} if {@code key} has already reached {@code maxAttempts}. */
     public void check(String key, int maxAttempts, Duration window) {
-        if (currentCount(key) >= maxAttempts) {
+        if (currentCount(key, window) >= maxAttempts) {
             throw new RateLimitedException(ttlSeconds(key, window));
         }
     }
@@ -84,6 +108,13 @@ public class RateLimiterService {
 
     // ───────────────────────────── Internal counter ops ────────────────────────────
 
+    private boolean isFailClosed(String key) {
+        for (String prefix : failClosedPrefixes) {
+            if (key.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
     /** Increments the counter, sets the window TTL on first hit, and returns the new count. */
     private long increment(String key, Duration window) {
         String redisKey = PREFIX + key;
@@ -94,18 +125,26 @@ public class RateLimiterService {
             }
             return count != null ? count : 1L;
         } catch (DataAccessException e) {
+            if (isFailClosed(key)) {
+                log.warn("Redis unavailable for fail-closed rate-limit key '{}' — denying request", key);
+                throw new RateLimitedException(window.toSeconds());
+            }
             log.warn("Redis unavailable for rate limiting — using in-memory fallback for '{}'", key);
             return incrementInMemory(redisKey, window);
         }
     }
 
     /** Reads the current count without incrementing. */
-    private long currentCount(String key) {
+    private long currentCount(String key, Duration window) {
         String redisKey = PREFIX + key;
         try {
             String value = redisTemplate.opsForValue().get(redisKey);
             return value != null ? Long.parseLong(value) : 0L;
         } catch (DataAccessException e) {
+            if (isFailClosed(key)) {
+                log.warn("Redis unavailable for fail-closed rate-limit key '{}' — denying request", key);
+                throw new RateLimitedException(window.toSeconds());
+            }
             log.warn("Redis unavailable for rate limiting — using in-memory fallback for '{}'", key);
             Counter counter = memoryStore.get(redisKey);
             return (counter != null && !counter.isExpired()) ? counter.count : 0L;

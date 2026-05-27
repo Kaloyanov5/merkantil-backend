@@ -14,6 +14,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,7 +36,8 @@ class RateLimiterServiceTest {
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        rateLimiterService = new RateLimiterService(redisTemplate);
+        // Empty fail-closed list keeps existing in-memory fallback behavior under test
+        rateLimiterService = new RateLimiterService(redisTemplate, List.of());
     }
 
     // ---------- THROUGHPUT LIMITING (enforce) ----------
@@ -114,6 +116,28 @@ class RateLimiterServiceTest {
 
         // The 11th hit exceeds the limit, still enforced without Redis
         assertThatThrownBy(() -> rateLimiterService.enforce("order:99", 10, WINDOW))
+                .isInstanceOf(RateLimitedException.class);
+    }
+
+    @Test
+    @DisplayName("enforce: fail-closed prefix denies request when Redis is unreachable")
+    void enforce_failClosedPrefix_deniesOnRedisOutage() {
+        RateLimiterService failClosed = new RateLimiterService(redisTemplate, List.of("login:"));
+        when(valueOps.increment(any()))
+                .thenThrow(new RedisConnectionFailureException("Redis is down"));
+
+        assertThatThrownBy(() -> failClosed.enforce("login:user@example.com", 5, WINDOW))
+                .isInstanceOf(RateLimitedException.class);
+    }
+
+    @Test
+    @DisplayName("check: fail-closed prefix denies request when Redis is unreachable")
+    void check_failClosedPrefix_deniesOnRedisOutage() {
+        RateLimiterService failClosed = new RateLimiterService(redisTemplate, List.of("password-reset:"));
+        when(valueOps.get(any()))
+                .thenThrow(new RedisConnectionFailureException("Redis is down"));
+
+        assertThatThrownBy(() -> failClosed.check("password-reset:user@example.com", 3, WINDOW))
                 .isInstanceOf(RateLimitedException.class);
     }
 }
