@@ -1,15 +1,23 @@
 package github.kaloyanov5.merkantil.controller;
 
 import github.kaloyanov5.merkantil.dto.massive.MassiveBar;
+import github.kaloyanov5.merkantil.dto.request.BackfillSingleRequest;
 import github.kaloyanov5.merkantil.dto.request.ImportMultipleRequest;
+import github.kaloyanov5.merkantil.dto.request.ImportSingleRequest;
 import github.kaloyanov5.merkantil.repository.StockRepository;
 import github.kaloyanov5.merkantil.service.MassiveApiService;
 import github.kaloyanov5.merkantil.service.StockImportService;
 import github.kaloyanov5.merkantil.service.StockPriceScheduler;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -21,6 +29,7 @@ import java.util.Map;
 @RequestMapping("/api/admin/stocks/import")
 @PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
+@Validated
 @Slf4j
 public class StockImportController {
 
@@ -35,14 +44,9 @@ public class StockImportController {
      * POST /api/admin/stocks/import/all
      */
     @PostMapping("/all")
-    public ResponseEntity<?> importAllStocks() {
-        try {
-            StockImportService.ImportResult result = stockImportService.importStocksFromMassive();
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Import failed: " + e.getMessage()));
-        }
+    public ResponseEntity<StockImportService.ImportResult> importAllStocks() {
+        StockImportService.ImportResult result = stockImportService.importStocksFromMassive();
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -50,19 +54,9 @@ public class StockImportController {
      * POST /api/admin/stocks/import/top?limit=30
      */
     @PostMapping("/top")
-    public ResponseEntity<?> importTopStocks(@RequestParam(defaultValue = "30") int limit) {
-        try {
-            if (limit <= 0 || limit > 100) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Limit must be between 1 and 100"));
-            }
-
-            StockImportService.ImportResult result = stockImportService.importTopStocks(limit);
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Import failed: " + e.getMessage()));
-        }
+    public ResponseEntity<?> importTopStocks(@RequestParam(defaultValue = "30") @Min(1) @Max(100) int limit) {
+        StockImportService.ImportResult result = stockImportService.importTopStocks(limit);
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -71,24 +65,14 @@ public class StockImportController {
      * Body: { "symbol": "AAPL" }
      */
     @PostMapping("/single")
-    public ResponseEntity<?> importSingleStock(@RequestBody Map<String, String> request) {
-        try {
-            String symbol = request.get("symbol");
-            if (symbol == null || symbol.trim().isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Symbol is required"));
-            }
-
-            StockImportService.SingleImportResult result = stockImportService.importSingleStock(symbol);
-            return switch (result) {
-                case CREATED -> ResponseEntity.ok(Map.of("message", "Stock imported: " + symbol, "status", "created"));
-                case UPDATED -> ResponseEntity.ok(Map.of("message", "Stock already exists, data refreshed: " + symbol, "status", "updated"));
-                case FAILED -> ResponseEntity.badRequest().body(Map.of("error", "Stock not found or inactive: " + symbol));
-            };
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Import failed: " + e.getMessage()));
-        }
+    public ResponseEntity<?> importSingleStock(@Valid @RequestBody ImportSingleRequest request) {
+        String symbol = request.symbol();
+        StockImportService.SingleImportResult result = stockImportService.importSingleStock(symbol);
+        return switch (result) {
+            case CREATED -> ResponseEntity.ok(Map.of("message", "Stock imported: " + symbol, "status", "created"));
+            case UPDATED -> ResponseEntity.ok(Map.of("message", "Stock already exists, data refreshed: " + symbol, "status", "updated"));
+            case FAILED -> ResponseEntity.badRequest().body(Map.of("error", "Stock not found or inactive: " + symbol));
+        };
     }
 
     /**
@@ -97,50 +81,38 @@ public class StockImportController {
      * Body: { "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN"] }
      */
     @PostMapping("/multiple")
-    public ResponseEntity<?> importMultipleStocks(@RequestBody ImportMultipleRequest request) {
-        try {
-            List<String> symbols = request.symbols();
-            if (symbols == null || symbols.isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "symbols array is required and cannot be empty"));
-            }
+    public ResponseEntity<?> importMultipleStocks(@Valid @RequestBody ImportMultipleRequest request) {
+        List<String> symbols = request.symbols();
 
-            if (symbols.size() > 100) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Maximum 100 stocks can be imported at once"));
-            }
+        int imported = 0;
+        int failed = 0;
+        List<String> failedSymbols = new ArrayList<>();
 
-            int imported = 0;
-            int failed = 0;
-            List<String> failedSymbols = new ArrayList<>();
-
-            for (String symbol : symbols) {
-                try {
-                    StockImportService.SingleImportResult result =
-                            stockImportService.importSingleStock(symbol.toUpperCase());
-                    if (result == StockImportService.SingleImportResult.FAILED) {
-                        failed++;
-                        failedSymbols.add(symbol);
-                    } else {
-                        imported++;
-                    }
-                } catch (Exception e) {
+        // Per-symbol catch is intentional: one bad symbol should not abort the batch.
+        for (String symbol : symbols) {
+            try {
+                StockImportService.SingleImportResult result =
+                        stockImportService.importSingleStock(symbol.toUpperCase());
+                if (result == StockImportService.SingleImportResult.FAILED) {
                     failed++;
-                    failedSymbols.add(symbol + " (" + e.getMessage() + ")");
+                    failedSymbols.add(symbol);
+                } else {
+                    imported++;
                 }
+            } catch (Exception e) {
+                failed++;
+                failedSymbols.add(symbol);
+                log.warn("Import failed for symbol {}: {}", symbol, e.getMessage());
             }
-
-            return ResponseEntity.ok(Map.of(
-                    "message", "Import completed",
-                    "total", symbols.size(),
-                    "imported", imported,
-                    "failed", failed,
-                    "failedSymbols", failedSymbols
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Import failed: " + e.getMessage()));
         }
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Import completed",
+                "total", symbols.size(),
+                "imported", imported,
+                "failed", failed,
+                "failedSymbols", failedSymbols
+        ));
     }
 
     /**
@@ -149,13 +121,8 @@ public class StockImportController {
      */
     @PostMapping("/update-prices")
     public ResponseEntity<?> updatePrices() {
-        try {
-            stockPriceScheduler.updatePricesNow();
-            return ResponseEntity.ok(Map.of("message", "Price update completed successfully"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Price update failed: " + e.getMessage()));
-        }
+        stockPriceScheduler.updatePricesNow();
+        return ResponseEntity.ok(Map.of("message", "Price update completed successfully"));
     }
 
     /**
@@ -169,23 +136,17 @@ public class StockImportController {
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
             LocalDate endDate
     ) {
-        try {
-            if (startDate.isAfter(endDate)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Start date must be before end date"));
-            }
-
-            if (startDate.isBefore(LocalDate.now().minusYears(5))) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Start date cannot be more than 5 years ago"));
-            }
-
-            StockPriceScheduler.BackfillResult result = stockPriceScheduler.backfillAllStocks(startDate, endDate);
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
+        if (startDate.isAfter(endDate)) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Backfill failed: " + e.getMessage()));
+                    .body(Map.of("error", "Start date must be before end date"));
         }
+        if (startDate.isBefore(LocalDate.now().minusYears(5))) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Start date cannot be more than 5 years ago"));
+        }
+
+        StockPriceScheduler.BackfillResult result = stockPriceScheduler.backfillAllStocks(startDate, endDate);
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -194,30 +155,19 @@ public class StockImportController {
      * Body: { "symbol": "AAPL", "startDate": "2024-01-01", "endDate": "2024-12-31" }
      */
     @PostMapping("/backfill-single")
-    public ResponseEntity<?> backfillSingleStock(@RequestBody Map<String, String> request) {
-        try {
-            String symbol = request.get("symbol");
-            String startDateStr = request.get("startDate");
-            String endDateStr = request.get("endDate");
-
-            if (symbol == null || startDateStr == null || endDateStr == null) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "symbol, startDate, and endDate are required"));
-            }
-
-            LocalDate startDate = LocalDate.parse(startDateStr);
-            LocalDate endDate = LocalDate.parse(endDateStr);
-
-            int records = stockPriceScheduler.backfillStockHistory(symbol, startDate, endDate);
-
-            return ResponseEntity.ok(Map.of(
-                    "message", "Backfill completed for " + symbol,
-                    "recordsAdded", records
-            ));
-        } catch (Exception e) {
+    public ResponseEntity<?> backfillSingleStock(@Valid @RequestBody BackfillSingleRequest request) {
+        if (request.startDate().isAfter(request.endDate())) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Backfill failed: " + e.getMessage()));
+                    .body(Map.of("error", "Start date must be before or equal to end date"));
         }
+
+        int records = stockPriceScheduler.backfillStockHistory(
+                request.symbol(), request.startDate(), request.endDate());
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Backfill completed for " + request.symbol(),
+                "recordsAdded", records
+        ));
     }
 
     /**
@@ -226,29 +176,24 @@ public class StockImportController {
      */
     @GetMapping("/test-bars")
     public ResponseEntity<?> testBars(
-            @RequestParam String symbol,
+            @RequestParam
+            @Size(max = 10)
+            @Pattern(regexp = "^[A-Za-z0-9.\\-]+$", message = "symbol may only contain letters, digits, dot and hyphen")
+            String symbol,
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
             LocalDate startDate,
             @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
             LocalDate endDate
     ) {
-        try {
-            log.info("Testing bars API for {} from {} to {}", symbol, startDate, endDate);
+        log.info("Testing bars API for {} from {} to {}",
+                github.kaloyanov5.merkantil.util.LogSanitizer.safe(symbol), startDate, endDate);
 
-            List<MassiveBar> result = massiveApiService.getHistoricalBars(symbol, startDate, endDate);
+        List<MassiveBar> result = massiveApiService.getHistoricalBars(symbol, startDate, endDate);
 
-            return ResponseEntity.ok(Map.of(
-                    "success", result != null && !result.isEmpty(),
-                    "barsCount", result != null ? result.size() : 0,
-                    "data", result != null ? result : List.of()
-            ));
-        } catch (Exception e) {
-            log.error("Test bars error: ", e);
-            return ResponseEntity.ok(Map.of(
-                    "success", false,
-                    "error", e.getMessage(),
-                    "errorType", e.getClass().getSimpleName()
-            ));
-        }
+        return ResponseEntity.ok(Map.of(
+                "success", result != null && !result.isEmpty(),
+                "barsCount", result != null ? result.size() : 0,
+                "data", result != null ? result : List.of()
+        ));
     }
 }
