@@ -19,12 +19,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +46,14 @@ public class StockPriceScheduler {
 
     private static final int BATCH_SIZE = 10; // Process 10 stocks per API call
 
+    // Circuit-breaker: when the scheduled tick fails this many consecutive times,
+    // skip subsequent runs for the cooldown window so a flapping Massive upstream
+    // does not pin the executor or spam the logs every 30 seconds.
+    private static final int FAILURE_THRESHOLD = 5;
+    private static final Duration COOLDOWN = Duration.ofMinutes(5);
+    private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+    private final AtomicReference<Instant> openUntil = new AtomicReference<>(Instant.EPOCH);
+
     /**
      * Update all stock prices every 30 seconds using batch requests
      * With 30 stocks and batch size 10: 3 API calls per update
@@ -49,6 +61,13 @@ public class StockPriceScheduler {
     @Scheduled(fixedRate = 30000) // 30 seconds = 30000 milliseconds
     @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updateAllStockPrices() {
+        Instant now = Instant.now();
+        Instant cooldownEnd = openUntil.get();
+        if (now.isBefore(cooldownEnd)) {
+            log.debug("Price-update circuit open until {}; skipping tick", cooldownEnd);
+            return;
+        }
+
         try {
             String marketSession = marketSessionService.getCurrentSession();
             log.info("Starting scheduled stock price update (session: {})...", marketSession);
@@ -79,8 +98,17 @@ public class StockPriceScheduler {
             }
 
             log.info("All stock price updates completed");
+            consecutiveFailures.set(0);
         } catch (Exception e) {
-            log.error("Error in scheduled stock price update: {}", e.getMessage());
+            int failures = consecutiveFailures.incrementAndGet();
+            log.error("Error in scheduled stock price update (failure {}): {}", failures, e.getMessage());
+            if (failures >= FAILURE_THRESHOLD) {
+                Instant until = Instant.now().plus(COOLDOWN);
+                openUntil.set(until);
+                consecutiveFailures.set(0);
+                log.warn("Price-update circuit opened after {} consecutive failures; pausing until {}",
+                        FAILURE_THRESHOLD, until);
+            }
         }
     }
 

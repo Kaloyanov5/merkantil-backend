@@ -15,11 +15,17 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import github.kaloyanov5.merkantil.dto.request.ChangePasswordRequest;
@@ -32,6 +38,7 @@ import java.util.Map;
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 @Tag(name = "Users", description = "Endpoints for managing user accounts, balances, wallet operations, sessions and password changes")
 public class UserController {
 
@@ -67,8 +74,8 @@ public class UserController {
             @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
     public ResponseEntity<?> getAllUsers(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "DESC") String direction
     ) {
@@ -96,9 +103,9 @@ public class UserController {
             @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
     public ResponseEntity<?> searchUsers(
-            @RequestParam String query,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam @Size(max = 100, message = "Query too long (max 100 chars)") String query,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         try {
             if (query == null || query.trim().isEmpty()) {
@@ -120,7 +127,13 @@ public class UserController {
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "404", description = "No user found with the given email")
     })
-    public ResponseEntity<?> lookupByEmail(@RequestParam String email) {
+    public ResponseEntity<?> lookupByEmail(
+            @RequestParam
+            @NotBlank(message = "email is required")
+            @Email(message = "email must be a valid email address")
+            @Size(max = 254, message = "email is too long")
+            String email
+    ) {
         User currentUser = authService.getCurrentUser();
         Map<String, String> result = userService.lookupByEmail(email, currentUser.getId());
         if (result == null) {
@@ -274,8 +287,8 @@ public class UserController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> getWalletHistory(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         try {
             User currentUser = authService.getCurrentUser();

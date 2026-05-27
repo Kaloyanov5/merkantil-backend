@@ -8,10 +8,13 @@ import github.kaloyanov5.merkantil.repository.UserRepository;
 import github.kaloyanov5.merkantil.service.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -22,6 +25,7 @@ import java.util.Map;
 @RequestMapping("/api/admin/users")
 @PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "Admin - Users", description = "Administrative endpoints for user management and platform statistics")
 public class AdminUserController {
 
@@ -41,8 +45,8 @@ public class AdminUserController {
     @Operation(summary = "Get user transactions", description = "Returns paginated trade history for any user. Requires ADMIN role.")
     public ResponseEntity<?> getUserTransactions(
             @PathVariable Long id,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         try {
             ensureUserExists(id);
@@ -76,8 +80,8 @@ public class AdminUserController {
     @Operation(summary = "Get user orders", description = "Returns paginated order history for any user. Requires ADMIN role.")
     public ResponseEntity<?> getUserOrders(
             @PathVariable Long id,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         try {
             ensureUserExists(id);
@@ -95,8 +99,8 @@ public class AdminUserController {
     @Operation(summary = "Get user wallet", description = "Returns balance and wallet transaction history for any user. Requires ADMIN role.")
     public ResponseEntity<?> getUserWallet(
             @PathVariable Long id,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         try {
             ensureUserExists(id);
