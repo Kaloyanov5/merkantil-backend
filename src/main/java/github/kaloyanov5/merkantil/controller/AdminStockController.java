@@ -1,11 +1,14 @@
 package github.kaloyanov5.merkantil.controller;
 
+import github.kaloyanov5.merkantil.dto.request.StockAdminRequest;
+import github.kaloyanov5.merkantil.dto.request.StockAdminUpdateRequest;
 import github.kaloyanov5.merkantil.entity.Stock;
 import github.kaloyanov5.merkantil.repository.StockRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,22 +39,25 @@ public class AdminStockController {
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
-    public ResponseEntity<?> addStock(@RequestBody Stock stock) {
-        try {
-            if (stockRepository.findBySymbol(stock.getSymbol().toUpperCase()).isPresent()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Stock already exists: " + stock.getSymbol()));
-            }
-
-            stock.setSymbol(stock.getSymbol().toUpperCase());
-            stock.setIsActive(true);
-            stock.setLastUpdated(LocalDateTime.now());
-
-            Stock saved = stockRepository.save(stock);
-            return ResponseEntity.status(HttpStatus.CREATED).body(saved);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    public ResponseEntity<?> addStock(@Valid @RequestBody StockAdminRequest request) {
+        String symbol = request.symbol().toUpperCase();
+        if (stockRepository.findBySymbol(symbol).isPresent()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Stock already exists: " + symbol));
         }
+
+        Stock stock = new Stock();
+        stock.setSymbol(symbol);
+        stock.setName(request.name());
+        stock.setExchange(request.exchange());
+        stock.setCurrency(request.currency());
+        stock.setSector(request.sector());
+        stock.setIndustry(request.industry());
+        stock.setIsActive(request.isActive() != null ? request.isActive() : true);
+        stock.setLastUpdated(LocalDateTime.now());
+
+        Stock saved = stockRepository.save(stock);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 
     /**
@@ -68,26 +74,22 @@ public class AdminStockController {
     })
     public ResponseEntity<?> updateStock(
             @PathVariable String symbol,
-            @RequestBody Stock updatedStock
+            @Valid @RequestBody StockAdminUpdateRequest request
     ) {
-        try {
-            Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
-                    .orElseThrow(() -> new IllegalArgumentException("Stock not found"));
+        Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Stock not found"));
 
-            if (updatedStock.getName() != null) stock.setName(updatedStock.getName());
-            if (updatedStock.getExchange() != null) stock.setExchange(updatedStock.getExchange());
-            if (updatedStock.getCurrency() != null) stock.setCurrency(updatedStock.getCurrency());
-            if (updatedStock.getSector() != null) stock.setSector(updatedStock.getSector());
-            if (updatedStock.getIndustry() != null) stock.setIndustry(updatedStock.getIndustry());
-            if (updatedStock.getIsActive() != null) stock.setIsActive(updatedStock.getIsActive());
+        if (request.name() != null) stock.setName(request.name());
+        if (request.exchange() != null) stock.setExchange(request.exchange());
+        if (request.currency() != null) stock.setCurrency(request.currency());
+        if (request.sector() != null) stock.setSector(request.sector());
+        if (request.industry() != null) stock.setIndustry(request.industry());
+        if (request.isActive() != null) stock.setIsActive(request.isActive());
 
-            stock.setLastUpdated(LocalDateTime.now());
+        stock.setLastUpdated(LocalDateTime.now());
 
-            Stock saved = stockRepository.save(stock);
-            return ResponseEntity.ok(saved);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        Stock saved = stockRepository.save(stock);
+        return ResponseEntity.ok(saved);
     }
 
     /**
@@ -103,17 +105,13 @@ public class AdminStockController {
             @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
     public ResponseEntity<?> deleteStock(@PathVariable String symbol) {
-        try {
-            Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
-                    .orElseThrow(() -> new IllegalArgumentException("Stock not found"));
+        Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Stock not found"));
 
-            // Soft delete - just mark as inactive
-            stock.setIsActive(false);
-            stockRepository.save(stock);
+        // Soft delete - just mark as inactive
+        stock.setIsActive(false);
+        stockRepository.save(stock);
 
-            return ResponseEntity.ok(Map.of("message", "Stock deactivated: " + symbol));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        return ResponseEntity.ok(Map.of("message", "Stock deactivated: " + symbol));
     }
 }
