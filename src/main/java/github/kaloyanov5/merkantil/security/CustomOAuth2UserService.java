@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserServ
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,13 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
 
     private final DefaultOAuth2UserService delegate = new DefaultOAuth2UserService();
 
+    // Structured error codes so the failure handler can map to a specific
+    // frontend query param (e.g. ?error=oauth_unverified_email) instead of
+    // a generic "Google sign-in failed".
+    public static final String ERR_EMAIL_MISSING = "email_missing";
+    public static final String ERR_UNVERIFIED_LOCAL_ACCOUNT = "unverified_local_account";
+    public static final String ERR_ACCOUNT_BANNED = "account_banned";
+
     @Override
     @Transactional
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
@@ -37,7 +45,8 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
         String lastName = oauth2User.getAttribute("family_name");
 
         if (email == null) {
-            throw new OAuth2AuthenticationException("Email not provided by Google");
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error(ERR_EMAIL_MISSING, "Email not provided by Google", null));
         }
 
         User user = userRepository.findByEmail(email)
@@ -54,8 +63,10 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
                     // grant access to) the imposter's account. See H2.
                     if (!Boolean.TRUE.equals(existing.getEmailVerified())) {
                         log.warn("OAuth login denied for {} — local account exists but email is not verified", email);
-                        throw new OAuth2AuthenticationException(
-                                "An unverified local account exists for this email. Please log in with your password and verify the email, or contact support to link Google manually.");
+                        throw new OAuth2AuthenticationException(new OAuth2Error(
+                                ERR_UNVERIFIED_LOCAL_ACCOUNT,
+                                "An unverified local account exists for this email. Please log in with your password and verify the email, or contact support to link Google manually.",
+                                null));
                     }
                     existing.setGoogleId(googleId);
                     userRepository.save(existing);
@@ -76,7 +87,8 @@ public class CustomOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
                 });
 
         if (Boolean.TRUE.equals(user.getBanned())) {
-            throw new OAuth2AuthenticationException("Account is banned");
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error(ERR_ACCOUNT_BANNED, "Account is banned", null));
         }
 
         return new CustomOAuth2User(oauth2User, user);

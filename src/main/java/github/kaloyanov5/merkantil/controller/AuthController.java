@@ -63,7 +63,7 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/verify-2fa")
+    @PostMapping("/2fa/verify")
     @Operation(summary = "Complete 2FA login", description = "Verifies the 6-digit code sent to the user's email and completes the login, creating a session")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Login completed successfully"),

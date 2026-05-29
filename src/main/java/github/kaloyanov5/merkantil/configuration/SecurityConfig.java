@@ -16,6 +16,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.authentication.rememberme.JdbcTokenRepositoryImpl;
 import org.springframework.security.web.authentication.rememberme.PersistentTokenBasedRememberMeServices;
@@ -121,17 +122,21 @@ public class SecurityConfig {
                                 "/api/auth/forgot-password",
                                 "/api/auth/reset-password",
                                 "/api/auth/verify-email",
-                                "/api/auth/verify-2fa"
+                                "/api/auth/2fa/verify"
                         )
                 )
                 .securityContext(context -> context
                         .securityContextRepository(securityContextRepository)
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Logout is intentionally NOT in permitAll: the request must
+                        // carry both an authenticated session AND a valid CSRF token,
+                        // so an unauthenticated or cross-site POST cannot reach the
+                        // logout handler at all (defense in depth on top of CSRF).
                         .requestMatchers(
-                                "/api/auth/register", "/api/auth/login", "/api/auth/logout",
+                                "/api/auth/register", "/api/auth/login",
                                 "/api/auth/verify-email", "/api/auth/forgot-password",
-                                "/api/auth/reset-password", "/api/auth/verify-2fa"
+                                "/api/auth/reset-password", "/api/auth/2fa/verify"
                         ).permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
                         .requestMatchers(
@@ -155,11 +160,27 @@ public class SecurityConfig {
                         )
                         .successHandler(oauth2LoginSuccessHandler)
                         .failureHandler((req, res, ex) -> {
-                            log.error("OAuth2 login failed: {}", ex.getMessage());
-                            res.sendRedirect(frontendUrl + "/login?error=oauth_failed");
+                            String errorParam = mapOAuthErrorToParam(ex);
+                            String code = (ex instanceof OAuth2AuthenticationException oauthEx)
+                                    ? oauthEx.getError().getErrorCode()
+                                    : "unknown";
+                            log.warn("OAuth2 login failed: code={}, message={}", code, ex.getMessage());
+                            res.sendRedirect(frontendUrl + "/login?error=" + errorParam);
                         })
                 )
                 .authenticationProvider(authenticationProvider())
                 .build();
+    }
+
+    private static String mapOAuthErrorToParam(org.springframework.security.core.AuthenticationException ex) {
+        if (!(ex instanceof OAuth2AuthenticationException oauthEx)) {
+            return "oauth_failed";
+        }
+        return switch (oauthEx.getError().getErrorCode()) {
+            case CustomOAuth2UserService.ERR_UNVERIFIED_LOCAL_ACCOUNT -> "oauth_unverified_email";
+            case CustomOAuth2UserService.ERR_ACCOUNT_BANNED -> "oauth_banned";
+            case CustomOAuth2UserService.ERR_EMAIL_MISSING -> "oauth_email_missing";
+            default -> "oauth_failed";
+        };
     }
 }
