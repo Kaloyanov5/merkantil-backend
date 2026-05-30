@@ -25,9 +25,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -157,20 +161,42 @@ public class StockService {
     }
 
     /**
-     * Get stock history from Massive
+     * Get daily OHLCV history for a stock.
+     *
+     * <p>Daily bars are immutable once a trading day closes, so the local
+     * {@code stock_price_history} table is authoritative for any range ending on
+     * or before yesterday — provided it actually covers that range. We serve from
+     * the DB whenever it does and only call Massive when the DB is missing data or
+     * the request reaches into today (whose bar may still be forming). API results
+     * for already-closed days are written through to the DB so the next load for
+     * the same range needs no API call.
      */
     public List<StockHistoryResponse> getStockHistory(String symbol, LocalDate startDate, LocalDate endDate) {
-        List<MassiveBar> bars =
-                massiveApiService.getHistoricalBars(symbol.toUpperCase(), startDate, endDate);
+        String upper = symbol.toUpperCase();
+        LocalDate today = LocalDate.now(ZoneId.of("America/New_York"));
+
+        // DB can only be authoritative for ranges that don't include today's
+        // still-forming bar. When it covers the range, skip the API entirely.
+        if (endDate.isBefore(today)) {
+            List<StockPriceHistory> dbRows = stockPriceHistoryRepository
+                    .findBySymbolAndDateBetweenOrderByDateAsc(upper, startDate, endDate);
+            if (coversRange(dbRows, endDate)) {
+                return dbRows.stream().map(this::mapToHistoryResponse).collect(Collectors.toList());
+            }
+        }
+
+        List<MassiveBar> bars = massiveApiService.getHistoricalBars(upper, startDate, endDate);
 
         if (bars == null || bars.isEmpty()) {
-            // fallback to database
+            // Massive had nothing — serve whatever the DB holds as a last resort.
             return stockPriceHistoryRepository
-                    .findBySymbolAndDateBetweenOrderByDateAsc(symbol.toUpperCase(), startDate, endDate)
+                    .findBySymbolAndDateBetweenOrderByDateAsc(upper, startDate, endDate)
                     .stream()
                     .map(this::mapToHistoryResponse)
                     .collect(Collectors.toList());
         }
+
+        writeThroughClosedBars(upper, bars, today);
 
         return bars.stream()
                 .map(bar -> new StockHistoryResponse(
@@ -182,6 +208,107 @@ public class StockService {
                         bar.volume()
                 ))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Whether the DB rows fully cover the requested range up to its last trading day.
+     *
+     * <p>Checks two things: (1) the most recent row is at least as new as the last
+     * trading day on or before {@code endDate} (not stale), and (2) there is no
+     * missing trading day <em>between</em> the earliest and latest rows we hold (no
+     * interior gap). Missing days <em>before</em> the earliest row are treated as
+     * pre-history (the stock had not started trading yet — e.g. a recent IPO like
+     * KVYO) and deliberately ignored, otherwise a young stock's long-range chart
+     * would re-hit the API forever.
+     */
+    private boolean coversRange(List<StockPriceHistory> rows, LocalDate endDate) {
+        if (rows.isEmpty()) {
+            return false;
+        }
+        LocalDate lastExpected = previousOrSameTradingDay(endDate);
+        LocalDate lastHeld = rows.getLast().getDate();
+        if (lastExpected != null && lastHeld.isBefore(lastExpected)) {
+            return false; // behind — missing recent trading days
+        }
+
+        Set<LocalDate> present = rows.stream()
+                .map(StockPriceHistory::getDate)
+                .collect(Collectors.toSet());
+        LocalDate firstHeld = rows.getFirst().getDate();
+        for (LocalDate d = firstHeld; !d.isAfter(lastHeld); d = d.plusDays(1)) {
+            if (marketCalendar.isTradingDay(d) && !present.contains(d)) {
+                return false; // interior gap
+            }
+        }
+        return true;
+    }
+
+    /** Latest trading day on or before {@code date}; null if none within a week. */
+    private LocalDate previousOrSameTradingDay(LocalDate date) {
+        for (int i = 0; i < 7; i++) {
+            LocalDate candidate = date.minusDays(i);
+            if (marketCalendar.isTradingDay(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Persist already-closed bars (date strictly before today) that we don't yet
+     * hold, so a later request for the same range is served from the DB. Today's
+     * unclosed bar is skipped, and any persistence failure is swallowed — it must
+     * never break the chart response the caller is waiting on.
+     */
+    private void writeThroughClosedBars(String symbol, List<MassiveBar> bars, LocalDate today) {
+        try {
+            // Closed-day bars keyed by date: skips today's still-forming bar and
+            // collapses any duplicate dates within the API response.
+            Map<LocalDate, MassiveBar> closed = new LinkedHashMap<>();
+            for (MassiveBar bar : bars) {
+                LocalDate date = MassiveApiService.millisToLocalDate(bar.timestamp());
+                if (date == null || !date.isBefore(today)) {
+                    continue;
+                }
+                closed.put(date, bar);
+            }
+            if (closed.isEmpty()) {
+                return;
+            }
+
+            // One query for the dates already stored in this span, then diff in
+            // memory — instead of an existence check per bar.
+            Set<LocalDate> existing = stockPriceHistoryRepository
+                    .findBySymbolAndDateBetweenOrderByDateAsc(
+                            symbol, Collections.min(closed.keySet()), Collections.max(closed.keySet()))
+                    .stream()
+                    .map(StockPriceHistory::getDate)
+                    .collect(Collectors.toSet());
+
+            List<StockPriceHistory> toSave = new ArrayList<>();
+            closed.forEach((date, bar) -> {
+                if (existing.contains(date)) {
+                    return;
+                }
+                StockPriceHistory history = new StockPriceHistory();
+                history.setSymbol(symbol);
+                history.setDate(date);
+                history.setOpen(MoneyUtil.of(bar.open()));
+                history.setHigh(MoneyUtil.of(bar.high()));
+                history.setLow(MoneyUtil.of(bar.low()));
+                history.setClose(MoneyUtil.of(bar.close()));
+                history.setVolume(bar.volume() != null ? bar.volume().longValue() : null);
+                history.setCreatedAt(LocalDateTime.now());
+                toSave.add(history);
+            });
+
+            if (!toSave.isEmpty()) {
+                stockPriceHistoryRepository.saveAll(toSave);
+                log.debug("Wrote through {} history rows for {}", toSave.size(), symbol);
+            }
+        } catch (Exception e) {
+            log.warn("History write-through failed for {}: {}", symbol, e.getMessage());
+        }
     }
 
     /**
