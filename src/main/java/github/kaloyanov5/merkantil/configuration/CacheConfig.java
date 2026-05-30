@@ -1,7 +1,10 @@
 package github.kaloyanov5.merkantil.configuration;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CachingConfigurer;
@@ -28,6 +31,18 @@ public class CacheConfig implements CachingConfigurer {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // GenericJackson2JsonRedisSerializer needs the mapper to embed type info,
+        // otherwise cached records/POJOs round-trip as LinkedHashMap and the
+        // @Cacheable proxy throws ClassCastException at the call site. EVERYTHING
+        // (not NON_FINAL) is required because our DTOs are Java records (final).
+        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+                .allowIfSubType("github.kaloyanov5.merkantil")
+                .allowIfSubType("java.util")
+                .allowIfSubType("java.lang")
+                .allowIfSubType("java.math")
+                .allowIfSubType("java.time")
+                .build();
+        mapper.activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.EVERYTHING, JsonTypeInfo.As.PROPERTY);
 
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(1))
@@ -42,7 +57,13 @@ public class CacheConfig implements CachingConfigurer {
                 // TTL allowed up to ~60s of after-hours orders to slip through at
                 // session boundaries. 5s keeps the upstream call rate manageable
                 // while shrinking the boundary window to ~one snapshot tick.
-                "marketStatus", defaultConfig.entryTtl(Duration.ofSeconds(5))
+                "marketStatus", defaultConfig.entryTtl(Duration.ofSeconds(5)),
+                // Prices refresh every 5s via StockPriceScheduler with @CacheEvict.
+                // TTL must not exceed that interval — otherwise a silently-swallowed
+                // eviction failure (see LoggingCacheErrorHandler) would let the
+                // cache serve up to one extra update cycle of stale prices.
+                "stocks", defaultConfig.entryTtl(Duration.ofSeconds(5)),
+                "stockSnapshots", defaultConfig.entryTtl(Duration.ofSeconds(5))
         );
 
         return RedisCacheManager.builder(connectionFactory)
