@@ -7,6 +7,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 
 /**
  * Single source of truth for the current US market session.
@@ -33,7 +34,7 @@ public class MarketSessionService {
     @Cacheable("marketStatus")
     public String getCurrentSession() {
         try {
-            if (marketCalendar.isHoliday(LocalDate.now())) {
+            if (marketCalendar.isHoliday(LocalDate.now(ZoneId.of("America/New_York")))) {
                 return "HOLIDAY";
             }
             return massiveApiService.getDetailedMarketStatus().getOrDefault("status", "CLOSED");

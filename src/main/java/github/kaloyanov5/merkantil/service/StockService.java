@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -203,7 +204,7 @@ public class StockService {
      */
     public Map<String, String> getMarketStatus() {
         Map<String, String> status = massiveApiService.getDetailedMarketStatus();
-        if ("CLOSED".equals(status.get("status")) && marketCalendar.isHoliday(LocalDate.now())) {
+        if ("CLOSED".equals(status.get("status")) && marketCalendar.isHoliday(LocalDate.now(ZoneId.of("America/New_York")))) {
             Map<String, String> result = new java.util.HashMap<>(status);
             result.put("status", "HOLIDAY");
             return result;
