@@ -43,24 +43,35 @@ public class StockPriceScheduler {
     private final OrderService orderService;
     private final SimpMessagingTemplate messagingTemplate;
     private final MarketSessionService marketSessionService;
+    private final org.springframework.beans.factory.ObjectProvider<MassiveWsService> massiveWsServiceProvider;
 
     private static final int BATCH_SIZE = 10; // Process 10 stocks per API call
 
     // Circuit-breaker: when the scheduled tick fails this many consecutive times,
     // skip subsequent runs for the cooldown window so a flapping Massive upstream
-    // does not pin the executor or spam the logs every 30 seconds.
+    // does not pin the executor or spam the logs every 5 seconds.
     private static final int FAILURE_THRESHOLD = 5;
     private static final Duration COOLDOWN = Duration.ofMinutes(5);
     private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
     private final AtomicReference<Instant> openUntil = new AtomicReference<>(Instant.EPOCH);
 
     /**
-     * Update all stock prices every 30 seconds using batch requests
+     * Update all stock prices every 5 seconds using batch requests
      * With 30 stocks and batch size 10: 3 API calls per update
      */
-    @Scheduled(fixedRate = 30000) // 30 seconds = 30000 milliseconds
+    @Scheduled(fixedRate = 5000) // 5 seconds = 5000 milliseconds
     @CacheEvict(value = {"stocks", "stockSnapshots"}, allEntries = true)
     public void updateAllStockPrices() {
+        // When the Massive WS feed is alive and recent, it's already pushing
+        // per-second updates straight to the same DB/cache/broadcast pipeline
+        // this tick would walk — so skip the REST round-trip. The scheduler
+        // automatically resumes as the fallback when the WS goes stale or down.
+        MassiveWsService ws = massiveWsServiceProvider.getIfAvailable();
+        if (ws != null && ws.isHealthy()) {
+            log.debug("Massive WS is healthy; skipping REST price tick");
+            return;
+        }
+
         Instant now = Instant.now();
         Instant cooldownEnd = openUntil.get();
         if (now.isBefore(cooldownEnd)) {

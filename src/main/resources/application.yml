@@ -88,6 +88,18 @@ massive:
     key: ${MASSIVE_API_KEY}
     base-url: https://api.massive.com
     timeout: 10000  # 10 seconds
+  ws:
+    # WebSocket live-price stream. When healthy, the REST polling tick in
+    # StockPriceScheduler skips its work; flip enabled=false to fall back to
+    # pure REST polling without touching code.
+    enabled: ${MASSIVE_WS_ENABLED:true}
+    url: ${MASSIVE_WS_URL:wss://delayed.massive.com/stocks}
+    # If no A event arrives within this window the WS is treated as unhealthy
+    # and the REST scheduler resumes as fallback (handles off-hours / dead air).
+    stale-threshold-seconds: 60
+    reconnect:
+      initial-backoff-ms: 1000
+      max-backoff-ms: 60000
 
 remember:
   me:

@@ -4,6 +4,8 @@ import github.kaloyanov5.merkantil.dto.request.StockAdminRequest;
 import github.kaloyanov5.merkantil.dto.request.StockAdminUpdateRequest;
 import github.kaloyanov5.merkantil.entity.Stock;
 import github.kaloyanov5.merkantil.repository.StockRepository;
+import github.kaloyanov5.merkantil.service.MassiveWsService;
+import org.springframework.beans.factory.ObjectProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -26,6 +28,7 @@ import java.util.Map;
 public class AdminStockController {
 
     private final StockRepository stockRepository;
+    private final ObjectProvider<MassiveWsService> massiveWsServiceProvider;
 
     /**
      * Add new stock (ADMIN only)
@@ -57,6 +60,7 @@ public class AdminStockController {
         stock.setLastUpdated(LocalDateTime.now());
 
         Stock saved = stockRepository.save(stock);
+        refreshWsSubscriptions();
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 
@@ -89,6 +93,11 @@ public class AdminStockController {
         stock.setLastUpdated(LocalDateTime.now());
 
         Stock saved = stockRepository.save(stock);
+        // Only resync subscriptions when activeness toggled — other field edits
+        // (name, sector, etc.) don't change the WS subscription set.
+        if (request.isActive() != null) {
+            refreshWsSubscriptions();
+        }
         return ResponseEntity.ok(saved);
     }
 
@@ -111,7 +120,15 @@ public class AdminStockController {
         // Soft delete - just mark as inactive
         stock.setIsActive(false);
         stockRepository.save(stock);
+        refreshWsSubscriptions();
 
         return ResponseEntity.ok(Map.of("message", "Stock deactivated: " + symbol));
+    }
+
+    private void refreshWsSubscriptions() {
+        MassiveWsService ws = massiveWsServiceProvider.getIfAvailable();
+        if (ws != null) {
+            ws.refreshSubscriptions();
+        }
     }
 }
