@@ -101,6 +101,13 @@ massive:
       initial-backoff-ms: 1000
       max-backoff-ms: 60000
 
+analytics:
+  risk-free-rate: 0.04
+  benchmark-symbol: SPY
+  trading-days-per-year: 252
+  default-window: 3M
+  min-observations: 20
+
 remember:
   me:
     key: ${REMEMBER_ME_KEY}
