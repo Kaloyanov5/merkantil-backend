@@ -28,6 +28,8 @@ Merkantil is a Spring Boot 3 service that exposes a REST API for a simulated sto
 
 * **Portfolio insights** – view holdings, per-symbol positions, user-level summaries, and historical portfolio growth charts reconstructed from actual trading-day close prices.
 
+* **Portfolio analytics** – proprietary risk and performance metrics computed in-house from stored trades and price history: time-weighted & money-weighted (XIRR) returns, annualized volatility, Sharpe & Sortino ratios, max drawdown, beta/alpha/R² versus an SPY benchmark, sector allocation and concentration (HHI), and per-holding analytics. Served from `/api/portfolio/analytics` with Redis caching.
+
 * **Admin tooling** – stock universe management (`/api/admin/stocks/**`) and user administration (`/api/admin/users/**`) including per-user transactions, portfolio, orders, wallet, sessions, ban/unban, and platform-wide stats. All admin routes are guarded by `ROLE_ADMIN`.
 
 * **Scheduled maintenance** – recurring jobs refresh intraday quotes every 30 seconds, capture end-of-day snapshots at 12:30 AM local time on trading days (Tuesday–Saturday, covering Mon–Fri US market closes), and fill historical gaps at 5 AM daily.
@@ -210,7 +212,7 @@ With the app running, visit:
 | Stocks | `GET /api/stocks`, `GET /api/stocks/{symbol}/quote`, `POST /api/stocks/quotes` (batch, max 30), `GET /api/stocks/movers/{type}`, `GET /api/stocks/market-status`, `GET /api/stocks/news?ticker=&limit=`. |
 | Stocks (browse) | `GET /api/stocks/search?q=`, `GET /api/stocks/sectors`, `GET /api/stocks/sector/{sector}`, `GET /api/stocks/{symbol}/history?startDate=&endDate=`. |
 | Watchlist | `GET /api/watchlist` (returns enriched quotes), `POST /api/watchlist/{symbol}`, `DELETE /api/watchlist/{symbol}`. |
-| Portfolio | `GET /api/portfolio`, `GET /api/portfolio/summary`, `GET /api/portfolio/{symbol}`, `GET /api/portfolio/growth`, `GET /api/portfolio/growth/range?startDate=&endDate=`. |
+| Portfolio | `GET /api/portfolio`, `GET /api/portfolio/summary`, `GET /api/portfolio/{symbol}`, `GET /api/portfolio/growth`, `GET /api/portfolio/growth/range?startDate=&endDate=`, `GET /api/portfolio/analytics?window=`. |
 | Orders | `POST /api/orders`, `GET /api/orders`, `GET /api/orders/symbol/{symbol}`, `DELETE /api/orders/{id}` (cancel open limit order). |
 | Transactions | `GET /api/transactions`, `GET /api/transactions/type/{type}`, `GET /api/transactions/stats`. |
 | Wallet & profile | `GET /api/users/me/balance`, `POST /api/users/{id}/deposit` (≤ $25k), `POST /api/users/{id}/withdraw` (≤ $10k), `POST /api/users/me/transfer`, `GET /api/users/me/wallet/history`, `POST /api/users/me/change-password`. |
