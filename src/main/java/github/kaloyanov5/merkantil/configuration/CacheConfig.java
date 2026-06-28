@@ -63,7 +63,10 @@ public class CacheConfig implements CachingConfigurer {
                 // eviction failure (see LoggingCacheErrorHandler) would let the
                 // cache serve up to one extra update cycle of stale prices.
                 "stocks", defaultConfig.entryTtl(Duration.ofSeconds(5)),
-                "stockSnapshots", defaultConfig.entryTtl(Duration.ofSeconds(5))
+                "stockSnapshots", defaultConfig.entryTtl(Duration.ofSeconds(5)),
+                // On-demand portfolio analytics. 15-minute TTL keeps a new trade
+                // reflected quickly without explicit eviction.
+                "portfolioAnalytics", defaultConfig.entryTtl(Duration.ofMinutes(15))
         );
 
         return RedisCacheManager.builder(connectionFactory)

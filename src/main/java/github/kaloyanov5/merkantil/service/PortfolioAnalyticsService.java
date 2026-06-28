@@ -21,6 +21,7 @@ import github.kaloyanov5.merkantil.util.MarketCalendar;
 import github.kaloyanov5.merkantil.util.MoneyUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +53,7 @@ public class PortfolioAnalyticsService {
     private final MarketCalendar marketCalendar;
     private final AnalyticsProperties props;
 
+    @Cacheable(value = "portfolioAnalytics", key = "#userId + ':' + #window.name()")
     @Transactional(readOnly = true)
     public PortfolioAnalyticsResponse getAnalytics(Long userId, AnalyticsWindow window) {
         LocalDate today = LocalDate.now();
