@@ -11,7 +11,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -41,7 +40,6 @@ class PortfolioGrowthServiceTest {
     @Mock private StockPriceHistoryRepository stockPriceHistoryRepository;
     @Mock private MarketCalendar marketCalendar;
 
-    @InjectMocks
     private PortfolioGrowthService service;
 
     // Five consecutive weekdays
@@ -92,6 +90,11 @@ class PortfolioGrowthServiceTest {
                                 return h;
                             });
                 });
+
+        service = new PortfolioGrowthService(
+                new HoldingsReconstruction(transactionRepository),
+                stockPriceHistoryRepository,
+                marketCalendar);
     }
 
     private void addTransaction(LocalDate date, String symbol, Side side, int quantity) {

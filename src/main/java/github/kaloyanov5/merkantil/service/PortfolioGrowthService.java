@@ -1,11 +1,8 @@
 package github.kaloyanov5.merkantil.service;
 
 import github.kaloyanov5.merkantil.dto.response.PortfolioGrowthResponse;
-import github.kaloyanov5.merkantil.entity.Side;
 import github.kaloyanov5.merkantil.entity.StockPriceHistory;
-import github.kaloyanov5.merkantil.entity.Transaction;
 import github.kaloyanov5.merkantil.repository.StockPriceHistoryRepository;
-import github.kaloyanov5.merkantil.repository.TransactionRepository;
 import github.kaloyanov5.merkantil.util.MarketCalendar;
 import github.kaloyanov5.merkantil.util.MoneyUtil;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +12,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Service for calculating historical portfolio growth with financial accuracy.
@@ -28,7 +24,7 @@ import java.util.stream.Collectors;
 public class PortfolioGrowthService {
 
 
-    private final TransactionRepository transactionRepository;
+    private final HoldingsReconstruction holdingsReconstruction;
     private final StockPriceHistoryRepository stockPriceHistoryRepository;
     private final MarketCalendar marketCalendar;
 
@@ -86,7 +82,7 @@ public class PortfolioGrowthService {
      */
     private BigDecimal reconstructPortfolioValueForDate(Long userId, LocalDate date) {
         // Step 2.1: Reconstruct positions as of end of day
-        Map<String, Integer> positions = reconstructPositionsAsOfDate(userId, date);
+        Map<String, Integer> positions = holdingsReconstruction.positionsAsOf(userId, date);
 
         if (positions.isEmpty()) {
             log.debug("No positions for user {} on {}", userId, date);
@@ -123,39 +119,6 @@ public class PortfolioGrowthService {
         }
 
         return totalValue;
-    }
-
-    /**
-     * Reconstruct portfolio positions as of end of day for a specific date.
-     * Calculates net quantity (buys - sells) for each symbol up to and including the date.
-     *
-     * @param userId The user ID
-     * @param date The date to reconstruct positions for
-     * @return Map of symbol -> net quantity
-     */
-    private Map<String, Integer> reconstructPositionsAsOfDate(Long userId, LocalDate date) {
-        // Get all transactions up to and including this date
-        List<Transaction> transactions = transactionRepository
-                .findByUserIdAndDateBeforeOrEqual(userId, date);
-
-        // Calculate net quantity per symbol
-        Map<String, Integer> positions = new HashMap<>();
-
-        for (Transaction tx : transactions) {
-            String symbol = tx.getStockSymbol().toUpperCase();
-            int quantity = tx.getQuantity();
-
-            if (tx.getType() == Side.BUY) {
-                positions.put(symbol, positions.getOrDefault(symbol, 0) + quantity);
-            } else if (tx.getType() == Side.SELL) {
-                positions.put(symbol, positions.getOrDefault(symbol, 0) - quantity);
-            }
-        }
-
-        // Filter out symbols with zero quantity
-        return positions.entrySet().stream()
-                .filter(entry -> entry.getValue() > 0)
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     /**
