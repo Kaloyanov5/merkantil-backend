@@ -23,7 +23,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,8 +52,12 @@ public class PortfolioAnalyticsService {
     private final MarketCalendar marketCalendar;
     private final AnalyticsProperties props;
 
+    // NOTE: intentionally NOT @Transactional(readOnly = true). On first call this path
+    // lazily seeds the benchmark (SPY) via BenchmarkService -> StockPriceScheduler.backfillStockHistory,
+    // which writes to stock_price_history. A read-only transaction makes the JDBC connection
+    // read-only and those inserts fail (rolling back the whole request). Letting the backfill
+    // run in its own writable transaction keeps the seed durable and visible to the follow-up read.
     @Cacheable(value = "portfolioAnalytics", key = "#userId + ':' + #window.name()")
-    @Transactional(readOnly = true)
     public PortfolioAnalyticsResponse getAnalytics(Long userId, AnalyticsWindow window) {
         LocalDate today = LocalDate.now();
         LocalDate endDate = today.minusDays(1);
