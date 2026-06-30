@@ -17,6 +17,7 @@ public record StockQuoteResponse(
         BigDecimal extendedHoursPrice,
         BigDecimal extendedHoursChange,
         Double extendedHoursChangePercent,
+        String extendedHoursStatus,
         String marketSession,
         LocalDateTime timestamp
 ) {

@@ -20,6 +20,7 @@ public record StockResponse(
         BigDecimal changeAmount,  // currentPrice - previousClose
         Double changePercent,  // (changeAmount / previousClose) * 100
         BigDecimal extendedHoursPrice,
+        String extendedHoursStatus,
         Boolean isActive,
         LocalDateTime lastUpdated
 ) {

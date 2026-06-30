@@ -68,4 +68,89 @@ class StockServiceTest {
     void status_isTrading_whenAfterHoursAndPricePresent() {
         assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("12.34"), "AFTER_HOURS")).isEqualTo("TRADING");
     }
+
+    private MassiveBar barWithClose(double close) {
+        return new MassiveBar(null, null, null, close, null, null, null, null, null);
+    }
+
+    // ---------- getQuote (live snapshot) path ----------
+
+    @Test
+    void getQuote_emitsNoTrades_whenPreMarketHasNoExtendedTrade() {
+        // prevDay close present (so regular price resolves), but no lastTrade/min/fmv
+        MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
+                "DE", null, barWithClose(400.00), null, null, null, null, null, null, null);
+        when(massiveApiService.getSnapshot("DE")).thenReturn(snapshot);
+        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(stockRepository.findBySymbol("DE")).thenReturn(Optional.empty());
+
+        StockQuoteResponse quote = stockService.getQuote("DE");
+
+        assertThat(quote.extendedHoursPrice()).isNull();
+        assertThat(quote.extendedHoursStatus()).isEqualTo("NO_TRADES");
+    }
+
+    @Test
+    void getQuote_emitsTrading_whenPreMarketHasExtendedTrade() {
+        MassiveLastTrade lastTrade = new MassiveLastTrade(155.00, null, null, null, null, null);
+        MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
+                "AAPL", null, barWithClose(150.00), null, lastTrade, null, null, null, null, null);
+        when(massiveApiService.getSnapshot("AAPL")).thenReturn(snapshot);
+        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(stockRepository.findBySymbol("AAPL")).thenReturn(Optional.empty());
+
+        StockQuoteResponse quote = stockService.getQuote("AAPL");
+
+        assertThat(quote.extendedHoursPrice()).isEqualByComparingTo("155.00");
+        assertThat(quote.extendedHoursStatus()).isEqualTo("TRADING");
+    }
+
+    @Test
+    void getQuote_statusIsNull_whenMarketOpen() {
+        MassiveLastTrade lastTrade = new MassiveLastTrade(150.00, null, null, null, null, null);
+        MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
+                "AAPL", barWithClose(150.00), barWithClose(149.00), null, lastTrade, null, null, null, null, null);
+        when(massiveApiService.getSnapshot("AAPL")).thenReturn(snapshot);
+        when(marketSessionService.getCurrentSession()).thenReturn("OPEN");
+        when(stockRepository.findBySymbol("AAPL")).thenReturn(Optional.empty());
+
+        StockQuoteResponse quote = stockService.getQuote("AAPL");
+
+        assertThat(quote.extendedHoursStatus()).isNull();
+    }
+
+    // ---------- getStockBySymbol (stored entity) path ----------
+
+    @Test
+    void getStockBySymbol_emitsNoTrades_whenPreMarketAndStoredExtendedPriceNull() {
+        Stock stock = new Stock();
+        stock.setSymbol("DE");
+        stock.setCurrentPrice(new BigDecimal("400.00"));
+        stock.setPreviousClose(new BigDecimal("400.00"));
+        stock.setExtendedHoursPrice(null);
+        stock.setLastUpdated(LocalDateTime.now()); // fresh -> skips Massive refresh
+        when(stockRepository.findBySymbol("DE")).thenReturn(Optional.of(stock));
+        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+
+        StockResponse response = stockService.getStockBySymbol("DE");
+
+        assertThat(response.extendedHoursPrice()).isNull();
+        assertThat(response.extendedHoursStatus()).isEqualTo("NO_TRADES");
+    }
+
+    @Test
+    void getStockBySymbol_statusIsNull_whenMarketClosed() {
+        Stock stock = new Stock();
+        stock.setSymbol("DE");
+        stock.setCurrentPrice(new BigDecimal("400.00"));
+        stock.setPreviousClose(new BigDecimal("400.00"));
+        stock.setExtendedHoursPrice(null);
+        stock.setLastUpdated(LocalDateTime.now());
+        when(stockRepository.findBySymbol("DE")).thenReturn(Optional.of(stock));
+        when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
+
+        StockResponse response = stockService.getStockBySymbol("DE");
+
+        assertThat(response.extendedHoursStatus()).isNull();
+    }
 }

@@ -505,10 +505,12 @@ public class StockService {
         Double extendedHoursChangePercent = (extendedHoursChange != null && MoneyUtil.isPositive(currentPrice))
                 ? percentOf(extendedHoursChange, currentPrice) : null;
 
+        String extendedHoursStatus = resolveExtendedHoursStatus(extendedHoursPrice, marketSession);
+
         return new StockQuoteResponse(symbol, name, currentPrice, change, changePercent,
                 dayHigh, dayLow, dayOpen, previousClose, dayVolume,
                 extendedHoursPrice, extendedHoursChange, extendedHoursChangePercent,
-                marketSession, LocalDateTime.now());
+                extendedHoursStatus, marketSession, LocalDateTime.now());
     }
 
     /** Expresses {@code amount} as a percentage of {@code base}, as a display-only double. */
@@ -529,6 +531,10 @@ public class StockService {
             }
         }
 
+        String marketSession = marketSessionService.getCurrentSession();
+        String extendedHoursStatus =
+                resolveExtendedHoursStatus(stock.getExtendedHoursPrice(), marketSession);
+
         return new StockResponse(
                 stock.getId(),
                 stock.getSymbol(),
@@ -546,6 +552,7 @@ public class StockService {
                 changeAmount,
                 changePercent,
                 stock.getExtendedHoursPrice(),
+                extendedHoursStatus,
                 stock.getIsActive(),
                 stock.getLastUpdated()
         );
