@@ -55,8 +55,9 @@ public class StockService {
 
         Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(sortDirection, sortBy));
 
+        String marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findByIsActiveTrue(pageable)
-                .map(this::mapToStockResponse);
+                .map(s -> mapToStockResponse(s, marketSession));
     }
 
     /**
@@ -75,7 +76,8 @@ public class StockService {
             updateStockPriceFromMassive(stock);
         }
 
-        return mapToStockResponse(stock);
+        String marketSession = marketSessionService.getCurrentSession();
+        return mapToStockResponse(stock, marketSession);
     }
 
     /**
@@ -108,9 +110,10 @@ public class StockService {
     public Page<StockResponse> searchStocks(String query, int page, int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 100));
 
+        String marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findBySymbolContainingIgnoreCaseOrNameContainingIgnoreCase(
                         query, query, pageable)
-                .map(this::mapToStockResponse);
+                .map(s -> mapToStockResponse(s, marketSession));
     }
 
     /**
@@ -119,8 +122,9 @@ public class StockService {
     public Page<StockResponse> getStocksBySector(String sector, int page, int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "marketCap"));
 
+        String marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findBySector(sector, pageable)
-                .map(this::mapToStockResponse);
+                .map(s -> mapToStockResponse(s, marketSession));
     }
 
     /**
@@ -135,8 +139,9 @@ public class StockService {
      */
     public List<StockResponse> getTopGainers(int limit) {
         Pageable pageable = PageRequest.of(0, limit);
+        String marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findTopGainers(pageable).stream()
-                .map(this::mapToStockResponse)
+                .map(s -> mapToStockResponse(s, marketSession))
                 .collect(Collectors.toList());
     }
 
@@ -145,8 +150,9 @@ public class StockService {
      */
     public List<StockResponse> getTopLosers(int limit) {
         Pageable pageable = PageRequest.of(0, limit);
+        String marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findTopLosers(pageable).stream()
-                .map(this::mapToStockResponse)
+                .map(s -> mapToStockResponse(s, marketSession))
                 .collect(Collectors.toList());
     }
 
@@ -155,8 +161,9 @@ public class StockService {
      */
     public List<StockResponse> getMostActive(int limit) {
         Pageable pageable = PageRequest.of(0, limit);
+        String marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findTopByVolume(pageable).stream()
-                .map(this::mapToStockResponse)
+                .map(s -> mapToStockResponse(s, marketSession))
                 .collect(Collectors.toList());
     }
 
@@ -520,7 +527,7 @@ public class StockService {
                 .doubleValue();
     }
 
-    private StockResponse mapToStockResponse(Stock stock) {
+    private StockResponse mapToStockResponse(Stock stock, String marketSession) {
         BigDecimal changeAmount = null;
         Double changePercent = null;
 
@@ -531,7 +538,6 @@ public class StockService {
             }
         }
 
-        String marketSession = marketSessionService.getCurrentSession();
         String extendedHoursStatus =
                 resolveExtendedHoursStatus(stock.getExtendedHoursPrice(), marketSession);
 

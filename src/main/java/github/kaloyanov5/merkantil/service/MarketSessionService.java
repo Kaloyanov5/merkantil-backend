@@ -14,7 +14,7 @@ import java.time.ZoneId;
  *
  * <p>Consolidates the session-resolution logic that was previously duplicated
  * in {@code StockService} and {@code StockPriceScheduler}. The result is cached
- * (the 1-minute default TTL configured in {@code CacheConfig}) so that order
+ * (the 5-second {@code marketStatus} TTL configured in {@code CacheConfig}) so that order
  * placement, quote lookups and the 30-second price scheduler do not each hit
  * the Massive market-status endpoint.
  */
