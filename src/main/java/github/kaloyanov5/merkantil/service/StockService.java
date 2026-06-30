@@ -460,6 +460,20 @@ public class StockService {
         return null;
     }
 
+    /**
+     * Classifies the extended-hours display state for the frontend.
+     * Returns {@code null} outside PRE_MARKET/AFTER_HOURS; {@code "NO_TRADES"}
+     * when in an extended session with no visible extended-hours price (feed not
+     * yet caught up, or the ticker genuinely has no extended-hours trades);
+     * {@code "TRADING"} otherwise.
+     */
+    static String resolveExtendedHoursStatus(BigDecimal extendedHoursPrice, String marketSession) {
+        if (!"PRE_MARKET".equals(marketSession) && !"AFTER_HOURS".equals(marketSession)) {
+            return null;
+        }
+        return extendedHoursPrice == null ? "NO_TRADES" : "TRADING";
+    }
+
     private StockQuoteResponse buildQuoteResponse(String symbol, String name,
                                                    BigDecimal currentPrice, MassiveSnapshotTicker snapshot,
                                                    String marketSession) {
