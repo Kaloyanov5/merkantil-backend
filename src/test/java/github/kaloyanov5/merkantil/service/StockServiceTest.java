@@ -153,4 +153,23 @@ class StockServiceTest {
 
         assertThat(response.extendedHoursStatus()).isNull();
     }
+
+    // ---------- updateStockPriceFromMassive (stale clearing) ----------
+
+    @Test
+    void updateStockPriceFromMassive_clearsStaleExtendedPrice_whenNoExtendedTrade() {
+        Stock stock = new Stock();
+        stock.setSymbol("DE");
+        stock.setExtendedHoursPrice(new BigDecimal("399.00")); // stale from a prior session
+
+        // PRE_MARKET snapshot with day/prevDay close but no lastTrade/min/fmv
+        MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
+                "DE", barWithClose(400.00), barWithClose(398.00), null, null, null, null, null, null, null);
+        when(massiveApiService.getSnapshot("DE")).thenReturn(snapshot);
+        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+
+        stockService.updateStockPriceFromMassive(stock);
+
+        assertThat(stock.getExtendedHoursPrice()).isNull();
+    }
 }

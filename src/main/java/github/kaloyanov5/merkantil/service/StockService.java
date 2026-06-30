@@ -365,7 +365,7 @@ public class StockService {
                 }
             } else if ("PRE_MARKET".equals(marketSession) || "AFTER_HOURS".equals(marketSession)) {
                 BigDecimal extPrice = resolveExtendedHoursPrice(snapshot, marketSession);
-                if (extPrice != null) stock.setExtendedHoursPrice(extPrice);
+                stock.setExtendedHoursPrice(extPrice);
                 // Sync currentPrice with official regular-session close
                 if (snapshot.day() != null && snapshot.day().close() != null
                         && snapshot.day().close() > 0) {
