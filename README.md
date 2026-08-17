@@ -59,7 +59,7 @@ Merkantil is a Spring Boot 3 service that exposes a REST API for a simulated sto
 
 ## Configuration
 
-Configuration lives in `src/main/resources/application.yml` with profile overlays in `application-dev.yml` (default) and `application-prod.yml`. The profile is selected via `SPRING_PROFILES_ACTIVE` (defaults to `dev`).
+Configuration lives in a single `src/main/resources/application.yml`, tuned for local HTTP development. There are no Spring profile overlays.
 
 The committed `application.yml` is reproduced below for reference — only the env vars need to be supplied.
 
@@ -67,8 +67,6 @@ The committed `application.yml` is reproduced below for reference — only the e
 spring:
   application:
     name: merkantil
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   datasource:
     url: jdbc:mysql://localhost:3306/merkantil_db?createDatabaseIfNotExist=true
@@ -156,12 +154,9 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
 ```
 
-### Profiles
+### Session cookies
 
-* **`dev`** (default) — `Secure=false`, `SameSite=Lax` cookies; verbose app/security logging. Run plain over HTTP for local development.
-* **`prod`** — `Secure=true`, `SameSite=None` cookies (required when frontend and API live on different domains, since browsers only accept `SameSite=None` together with `Secure`); INFO-level logging. **Requires HTTPS.**
-
-Activate prod by exporting `SPRING_PROFILES_ACTIVE=prod` in the deploy environment.
+`Secure=false` and `SameSite=Lax`, with verbose app/security logging — the service runs plain over HTTP for local development. Serving it over HTTPS or across origins will need `Secure=true` + `SameSite=None`, which browsers only accept together.
 
 ### Required environment variables
 
@@ -177,7 +172,6 @@ Activate prod by exporting `SPRING_PROFILES_ACTIVE=prod` in the deploy environme
 | `FRONTEND_URL` | Origin used for redirect/login flows; defaults to `http://localhost:5173`. |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins permitted by CORS; defaults to common Vite/CRA dev ports. Add your production frontend origin here. |
 | `SERVER_PORT` | Defaults to `8080`. |
-| `SPRING_PROFILES_ACTIVE` | `dev` or `prod`; defaults to `dev`. |
 
 When running locally, a `.env` file or IDE run configuration can export these variables. Keep `.env` out of version control.
 

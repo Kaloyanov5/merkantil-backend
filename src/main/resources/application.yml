@@ -1,8 +1,6 @@
 spring:
   application:
     name: merkantil
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:merkantil_db}?createDatabaseIfNotExist=true
@@ -72,11 +70,14 @@ server:
         name: MERKANTIL_SESSION
         http-only: true
         max-age: 86400 # 24 hours
-        # secure + same-site come from profile-specific config
+        # Local HTTP development: no TLS, frontend is same-site.
+        secure: false
+        same-site: lax
 
-# Logging (profile-specific levels merge over this baseline)
 logging:
   level:
+    github.kaloyanov5.merkantil: DEBUG
+    org.springframework.security: INFO
     org.springframework.web.socket.config.WebSocketMessageBrokerStats: WARN
 
 stock:
