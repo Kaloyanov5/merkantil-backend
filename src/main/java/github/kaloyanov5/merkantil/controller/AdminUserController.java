@@ -30,7 +30,7 @@ import java.util.Map;
 public class AdminUserController {
 
     private final UserRepository userRepository;
-    private final UserService userService;
+    private final AccountService accountService;
     private final TransactionService transactionService;
     private final PortfolioService portfolioService;
     private final OrderService orderService;
@@ -104,8 +104,8 @@ public class AdminUserController {
     ) {
         try {
             ensureUserExists(id);
-            BalanceResponse balance = userService.getBalance(id);
-            Page<WalletTransactionResponse> history = userService.getWalletHistory(id, page, size);
+            BalanceResponse balance = accountService.getBalance(id);
+            Page<WalletTransactionResponse> history = accountService.getWalletHistory(id, page, size);
             return ResponseEntity.ok(Map.of("balance", balance, "history", history));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

@@ -5,8 +5,8 @@ import github.kaloyanov5.merkantil.dto.request.TransferRequest;
 import github.kaloyanov5.merkantil.dto.response.BalanceResponse;
 import github.kaloyanov5.merkantil.dto.response.WalletTransactionResponse;
 import github.kaloyanov5.merkantil.entity.User;
+import github.kaloyanov5.merkantil.service.AccountService;
 import github.kaloyanov5.merkantil.service.AuthService;
-import github.kaloyanov5.merkantil.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -31,7 +31,7 @@ import java.util.Map;
 public class AccountController {
 
     private final AuthService authService;
-    private final UserService userService;
+    private final AccountService accountService;
 
     @GetMapping("/{id}/balance")
     @Operation(summary = "Get balance by user ID", description = "Returns the wallet balance for the specified user. Users may only query their own balance.")
@@ -48,7 +48,7 @@ public class AccountController {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "You can only view your own balance"));
             }
-            BalanceResponse balance = userService.getBalance(id);
+            BalanceResponse balance = accountService.getBalance(id);
             return ResponseEntity.ok(balance);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -66,7 +66,7 @@ public class AccountController {
     public ResponseEntity<?> getMyBalance() {
         try {
             User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.getBalance(currentUser.getId());
+            BalanceResponse balance = accountService.getBalance(currentUser.getId());
             return ResponseEntity.ok(balance);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
@@ -88,7 +88,7 @@ public class AccountController {
             @Valid @RequestBody DepositRequest request
     ) {
         try {
-            BalanceResponse balance = userService.deposit(id, request.amount(), request.paymentMethodId());
+            BalanceResponse balance = accountService.deposit(id, request.amount(), request.paymentMethodId());
             return ResponseEntity.ok(Map.of(
                     "message", "Deposit successful",
                     "balance", balance
@@ -115,7 +115,7 @@ public class AccountController {
             @Valid @RequestBody DepositRequest request
     ) {
         try {
-            BalanceResponse balance = userService.withdraw(id, request.amount());
+            BalanceResponse balance = accountService.withdraw(id, request.amount());
             return ResponseEntity.ok(Map.of(
                     "message", "Withdrawal successful",
                     "balance", balance
@@ -137,7 +137,7 @@ public class AccountController {
     public ResponseEntity<?> transfer(@Valid @RequestBody TransferRequest request) {
         try {
             User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = userService.transfer(currentUser.getId(), request);
+            BalanceResponse balance = accountService.transfer(currentUser.getId(), request);
             return ResponseEntity.ok(Map.of(
                     "message", "Transfer successful",
                     "balance", balance
@@ -161,7 +161,7 @@ public class AccountController {
     ) {
         try {
             User currentUser = authService.getCurrentUser();
-            Page<WalletTransactionResponse> history = userService.getWalletHistory(currentUser.getId(), page, size);
+            Page<WalletTransactionResponse> history = accountService.getWalletHistory(currentUser.getId(), page, size);
             return ResponseEntity.ok(history);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
