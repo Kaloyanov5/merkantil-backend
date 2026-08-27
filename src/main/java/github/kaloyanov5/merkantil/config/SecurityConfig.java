@@ -1,0 +1,186 @@
+package github.kaloyanov5.merkantil.config;
+
+import github.kaloyanov5.merkantil.identity.security.CustomOAuth2UserService;
+import github.kaloyanov5.merkantil.identity.security.CustomUserDetailsService;
+import github.kaloyanov5.merkantil.identity.security.OAuth2LoginSuccessHandler;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.authentication.rememberme.JdbcTokenRepositoryImpl;
+import org.springframework.security.web.authentication.rememberme.PersistentTokenBasedRememberMeServices;
+import org.springframework.security.web.authentication.rememberme.PersistentTokenRepository;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import org.springframework.beans.factory.annotation.Value;
+
+import javax.sql.DataSource;
+import java.util.Arrays;
+import java.util.List;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+@RequiredArgsConstructor
+@Slf4j
+public class SecurityConfig {
+
+    private final CustomUserDetailsService userDetailsService;
+    private final CustomOAuth2UserService customOAuth2UserService;
+    private final OAuth2LoginSuccessHandler oauth2LoginSuccessHandler;
+    private final DataSource dataSource;
+    private final PasswordEncoder passwordEncoder;
+    private final SecurityContextRepository securityContextRepository;
+
+    @Value("${remember.me.key}")
+    private String rememberMeKey;
+
+    @Value("${app.frontend.url}")
+    private String frontendUrl;
+
+    @Value("${app.cors.allowed-origins}")
+    private List<String> allowedOrigins;
+
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder);
+        return provider;
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
+    }
+
+    @Bean
+    public PersistentTokenRepository persistentTokenRepository() {
+        JdbcTokenRepositoryImpl repo = new JdbcTokenRepositoryImpl();
+        repo.setDataSource(dataSource);
+        repo.setCreateTableOnStartup(false); // table created via ddl-auto
+        return repo;
+    }
+
+    @Bean
+    public PersistentTokenBasedRememberMeServices rememberMeServices() {
+        PersistentTokenBasedRememberMeServices services = new PersistentTokenBasedRememberMeServices(
+                rememberMeKey,
+                userDetailsService,
+                persistentTokenRepository()
+        );
+        services.setTokenValiditySeconds(30 * 24 * 60 * 60); // 30 days
+        services.setAlwaysRemember(false);
+        return services;
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(allowedOrigins);
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setExposedHeaders(Arrays.asList("Retry-After"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
+        // null attribute name forces eager token resolution (no XOR masking) so the
+        // raw value in the XSRF-TOKEN cookie matches what the SPA echoes in the header.
+        csrfHandler.setCsrfRequestAttributeName(null);
+
+        return http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(csrfHandler)
+                        .ignoringRequestMatchers(
+                                "/api/auth/login",
+                                "/api/auth/register",
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password",
+                                "/api/auth/verify-email",
+                                "/api/auth/2fa/verify"
+                        )
+                )
+                .securityContext(context -> context
+                        .securityContextRepository(securityContextRepository)
+                )
+                .authorizeHttpRequests(auth -> auth
+                        // Logout is intentionally NOT in permitAll: the request must
+                        // carry both an authenticated session AND a valid CSRF token,
+                        // so an unauthenticated or cross-site POST cannot reach the
+                        // logout handler at all (defense in depth on top of CSRF).
+                        .requestMatchers(
+                                "/api/auth/register", "/api/auth/login",
+                                "/api/auth/verify-email", "/api/auth/forgot-password",
+                                "/api/auth/reset-password", "/api/auth/2fa/verify"
+                        ).permitAll()
+                        .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+                        .requestMatchers(
+                                "/swagger-ui/**", "/swagger-ui.html",
+                                "/v3/api-docs/**", "/v3/api-docs.yaml",
+                                "/error"
+                        ).permitAll()
+                        .requestMatchers("/ws/**").authenticated()
+                        .requestMatchers("/api/**").authenticated()
+                        .anyRequest().denyAll()
+                )
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                )
+                .rememberMe(remember -> remember
+                        .rememberMeServices(rememberMeServices())
+                )
+                .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(userInfo -> userInfo
+                                .userService(customOAuth2UserService)
+                        )
+                        .successHandler(oauth2LoginSuccessHandler)
+                        .failureHandler((req, res, ex) -> {
+                            String errorParam = mapOAuthErrorToParam(ex);
+                            String code = (ex instanceof OAuth2AuthenticationException oauthEx)
+                                    ? oauthEx.getError().getErrorCode()
+                                    : "unknown";
+                            log.warn("OAuth2 login failed: code={}, message={}", code, ex.getMessage());
+                            res.sendRedirect(frontendUrl + "/login?error=" + errorParam);
+                        })
+                )
+                .authenticationProvider(authenticationProvider())
+                .build();
+    }
+
+    private static String mapOAuthErrorToParam(org.springframework.security.core.AuthenticationException ex) {
+        if (!(ex instanceof OAuth2AuthenticationException oauthEx)) {
+            return "oauth_failed";
+        }
+        return switch (oauthEx.getError().getErrorCode()) {
+            case CustomOAuth2UserService.ERR_UNVERIFIED_LOCAL_ACCOUNT -> "oauth_unverified_email";
+            case CustomOAuth2UserService.ERR_ACCOUNT_BANNED -> "oauth_banned";
+            case CustomOAuth2UserService.ERR_EMAIL_MISSING -> "oauth_email_missing";
+            default -> "oauth_failed";
+        };
+    }
+}

@@ -1,0 +1,74 @@
+package github.kaloyanov5.merkantil.trading.model;
+
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import github.kaloyanov5.merkantil.identity.model.User;
+import github.kaloyanov5.merkantil.trading.model.enums.OrderStatus;
+import github.kaloyanov5.merkantil.trading.model.enums.OrderType;
+import github.kaloyanov5.merkantil.trading.model.enums.Side;
+import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_order_user_timestamp", columnList = "user_id, timestamp"),
+        @Index(name = "idx_order_symbol_timestamp", columnList = "symbol, timestamp"),
+        @Index(name = "idx_order_user_symbol", columnList = "user_id, symbol")
+})
+@Getter @Setter
+@EntityListeners(AuditingEntityListener.class)
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotNull
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    @JsonBackReference
+    private User user;
+
+    @NotBlank
+    @Column(nullable = false)
+    private String symbol;
+
+    @NotNull
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Side type;
+
+    @NotNull
+    @Column(nullable = false)
+    private Integer quantity;
+
+    @Column(name = "at_price", precision = 19, scale = 4)
+    private BigDecimal atPrice;
+
+    @Column(name = "limit_price", precision = 19, scale = 4)
+    private BigDecimal limitPrice;
+
+    @NotNull
+    @Column(nullable = false, name = "order_type")
+    @Enumerated(EnumType.STRING)
+    private OrderType orderType;
+
+    @NotNull
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status = OrderStatus.OPEN;
+
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime timestamp;
+
+    @Version
+    @Column(nullable = false)
+    private Long version;
+}

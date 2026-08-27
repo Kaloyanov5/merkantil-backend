@@ -11,8 +11,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @EnableJpaAuditing
 @EnableCaching
-// escapeCharacter ensures `Containing` derived queries escape user-supplied % and _ via SQL ESCAPE clause
-@EnableJpaRepositories(basePackages = "github.kaloyanov5.merkantil.repository", escapeCharacter = '\\')
+@EnableJpaRepositories(basePackages = "github.kaloyanov5.merkantil", escapeCharacter = '\\')
 public class MerkantilApplication {
 
 	public static void main(String[] args) {

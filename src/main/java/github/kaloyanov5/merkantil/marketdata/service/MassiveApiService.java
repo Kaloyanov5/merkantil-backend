@@ -1,0 +1,564 @@
+package github.kaloyanov5.merkantil.marketdata.service;
+
+import github.kaloyanov5.merkantil.common.logging.LogSanitizer;
+import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.*;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import java.net.URI;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@Slf4j
+public class MassiveApiService {
+
+    private final WebClient client;
+    private final URI baseUri;
+
+    @Value("${massive.api.key}")
+    private String apiKey;
+
+    public MassiveApiService(
+            @Value("${massive.api.base-url}") String baseUrl,
+            @Value("${massive.api.timeout}") int timeout
+    ) {
+        this.baseUri = URI.create(baseUrl);
+        this.client = WebClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .codecs(configurer -> configurer
+                        .defaultCodecs()
+                        .maxInMemorySize(16 * 1024 * 1024)) // 16MB for large responses
+                .build();
+    }
+
+    /**
+     * Defend against SSRF: only follow paginated next_url values that point at the
+     * configured Massive base host with the same scheme. Anything else is dropped.
+     */
+    private boolean isAllowedNextUrl(String url) {
+        try {
+            URI candidate = URI.create(url);
+            if (!candidate.isAbsolute()) return false;
+            return baseUri.getScheme().equalsIgnoreCase(candidate.getScheme())
+                    && baseUri.getHost() != null
+                    && baseUri.getHost().equalsIgnoreCase(candidate.getHost())
+                    && baseUri.getPort() == candidate.getPort();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    // ========================
+    // SNAPSHOT ENDPOINTS
+    // ========================
+
+    /**
+     * Get real-time snapshot for a single stock.
+     * GET /v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}
+     */
+    public MassiveSnapshotTicker getSnapshot(String symbol) {
+        try {
+            log.info("Fetching snapshot for: {}", LogSanitizer.safe(symbol));
+
+            MassiveSnapshotResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}")
+                            .queryParam("apiKey", apiKey)
+                            .build(symbol.toUpperCase()))
+                    .retrieve()
+                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                            clientResponse -> {
+                                log.error("Massive.com API error for snapshot {}: HTTP {}", symbol, clientResponse.statusCode());
+                                return clientResponse.bodyToMono(String.class)
+                                        .map(body -> new RuntimeException("API error: " + body));
+                            })
+                    .bodyToMono(MassiveSnapshotResponse.class)
+                    .block();
+
+            if (response == null) {
+                log.warn("Null response for snapshot {}", symbol);
+                return null;
+            }
+
+            if (response.ticker() == null) {
+                log.warn("No snapshot ticker data for {} (status: {})", symbol, response.status());
+                return null;
+            }
+
+            log.debug("Snapshot for {}: lastTrade={}, day={}, prevDay={}",
+                    symbol,
+                    response.ticker().lastTrade() != null ? response.ticker().lastTrade().price() : "null",
+                    response.ticker().day() != null ? response.ticker().day().close() : "null",
+                    response.ticker().prevDay() != null ? response.ticker().prevDay().close() : "null");
+
+            return response.ticker();
+        } catch (Exception e) {
+            log.error("Error fetching snapshot for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get multiple snapshots at once.
+     * GET /v2/snapshot/locale/us/markets/stocks/tickers?tickers=AAPL,MSFT,...
+     */
+    public Map<String, MassiveSnapshotTicker> getMultipleSnapshots(List<String> symbols) {
+        try {
+            String tickersParam = symbols.stream()
+                    .map(String::toUpperCase)
+                    .collect(Collectors.joining(","));
+            log.info("Fetching snapshots for: {}", LogSanitizer.safe(tickersParam));
+
+            MassiveMultiSnapshotResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v2/snapshot/locale/us/markets/stocks/tickers")
+                            .queryParam("tickers", tickersParam)
+                            .queryParam("apiKey", apiKey)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(MassiveMultiSnapshotResponse.class)
+                    .block();
+
+            if (response == null || response.tickers() == null) {
+                log.warn("No multi-snapshot data returned");
+                return Map.of();
+            }
+
+            return response.tickers().stream()
+                    .filter(t -> t.ticker() != null)
+                    .collect(Collectors.toMap(
+                            MassiveSnapshotTicker::ticker,
+                            t -> t,
+                            (a, b) -> a // in case of duplicates, keep first
+                    ));
+        } catch (Exception e) {
+            log.error("Error fetching multiple snapshots: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    // ========================
+    // HISTORICAL BARS
+    // ========================
+
+    /**
+     * Get historical bars (OHLCV data).
+     * GET /v2/aggs/ticker/{ticker}/range/1/day/{from}/{to}
+     */
+    public List<MassiveBar> getHistoricalBars(String symbol, LocalDate startDate, LocalDate endDate) {
+        try {
+            log.info("Fetching historical bars for {} from {} to {}", symbol, startDate, endDate);
+
+            DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE;
+
+            MassiveAggregatesResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v2/aggs/ticker/{ticker}/range/1/day/{from}/{to}")
+                            .queryParam("adjusted", true)
+                            .queryParam("sort", "asc")
+                            .queryParam("limit", 50000)
+                            .queryParam("apiKey", apiKey)
+                            .build(symbol.toUpperCase(),
+                                    startDate.format(formatter),
+                                    endDate.format(formatter)))
+                    .retrieve()
+                    .bodyToMono(MassiveAggregatesResponse.class)
+                    .block();
+
+            if (response == null || response.results() == null) {
+                log.warn("No bars response for {}", symbol);
+                return new ArrayList<>();
+            }
+
+            List<MassiveBar> bars = response.results();
+
+            if (bars.isEmpty()) {
+                log.warn("No bars data for {} in response", symbol);
+                return new ArrayList<>();
+            }
+
+            log.info("Fetched {} bars for {}", bars.size(), symbol);
+            return new ArrayList<>(bars);
+
+        } catch (Exception e) {
+            log.error("Error fetching historical bars for {}: {}", symbol, e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+
+    // ========================
+    // LAST TRADE / QUOTE
+    // ========================
+
+    /**
+     * Get latest trade.
+     * GET /v2/last/trade/{ticker}
+     */
+    public MassiveLastTrade getLatestTrade(String symbol) {
+        try {
+            MassiveLastTradeResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v2/last/trade/{ticker}")
+                            .queryParam("apiKey", apiKey)
+                            .build(symbol.toUpperCase()))
+                    .retrieve()
+                    .bodyToMono(MassiveLastTradeResponse.class)
+                    .block();
+
+            return response != null ? response.results() : null;
+        } catch (Exception e) {
+            log.error("Error fetching latest trade for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get latest quote (NBBO).
+     * GET /v2/last/nbbo/{ticker}
+     */
+    public MassiveLastQuote getLatestQuote(String symbol) {
+        try {
+            MassiveLastQuoteResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v2/last/nbbo/{ticker}")
+                            .queryParam("apiKey", apiKey)
+                            .build(symbol.toUpperCase()))
+                    .retrieve()
+                    .bodyToMono(MassiveLastQuoteResponse.class)
+                    .block();
+
+            return response != null ? response.results() : null;
+        } catch (Exception e) {
+            log.error("Error fetching latest quote for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
+    // ========================
+    // TICKER / ASSET REFERENCE
+    // ========================
+
+    /**
+     * Get list of active stock tickers.
+     * GET /v3/reference/tickers?market=stocks&active=true&limit=1000
+     */
+    public List<MassiveTickerDetail> getAssets() {
+        try {
+            log.info("Fetching tradable assets from Massive.com");
+
+            List<MassiveTickerDetail> allTickers = new ArrayList<>();
+            String nextUrl = null;
+            boolean firstRequest = true;
+
+            // Paginate through results
+            while (firstRequest || nextUrl != null) {
+                firstRequest = false;
+                MassiveTickerListResponse response;
+
+                if (nextUrl != null) {
+                    if (!isAllowedNextUrl(nextUrl)) {
+                        log.warn("Refusing to follow next_url outside Massive base host: {}", nextUrl);
+                        break;
+                    }
+                    // next_url already contains apiKey, fetch directly
+                    final String url = nextUrl;
+                    response = client.get()
+                            .uri(url + "&apiKey=" + apiKey)
+                            .retrieve()
+                            .bodyToMono(MassiveTickerListResponse.class)
+                            .block();
+                } else {
+                    response = client.get()
+                            .uri(uriBuilder -> uriBuilder
+                                    .path("/v3/reference/tickers")
+                                    .queryParam("market", "stocks")
+                                    .queryParam("active", true)
+                                    .queryParam("limit", 1000)
+                                    .queryParam("apiKey", apiKey)
+                                    .build())
+                            .retrieve()
+                            .bodyToMono(MassiveTickerListResponse.class)
+                            .block();
+                }
+
+                if (response != null && response.results() != null) {
+                    allTickers.addAll(response.results());
+                    nextUrl = response.nextUrl();
+                } else {
+                    break;
+                }
+
+                // Safety limit to prevent infinite loops
+                if (allTickers.size() > 15000) {
+                    log.warn("Reached safety limit of 15000 tickers, stopping pagination");
+                    break;
+                }
+            }
+
+            log.info("Fetched {} total tickers from Massive.com", allTickers.size());
+            return allTickers;
+        } catch (Exception e) {
+            log.error("Error fetching assets: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Get specific ticker details.
+     * GET /v3/reference/tickers/{ticker}
+     */
+    public MassiveTickerDetail getAsset(String symbol) {
+        try {
+            MassiveTickerResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v3/reference/tickers/{ticker}")
+                            .queryParam("apiKey", apiKey)
+                            .build(symbol.toUpperCase()))
+                    .retrieve()
+                    .bodyToMono(MassiveTickerResponse.class)
+                    .block();
+
+            return response != null ? response.results() : null;
+        } catch (Exception e) {
+            log.error("Error fetching asset {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
+    // ========================
+    // MARKET STATUS
+    // ========================
+
+    /**
+     * Check if US stock market is currently open.
+     * GET /v1/marketstatus/now
+     */
+    public boolean isMarketOpen() {
+        try {
+            MassiveMarketStatusResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1/marketstatus/now")
+                            .queryParam("apiKey", apiKey)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(MassiveMarketStatusResponse.class)
+                    .block();
+
+            if (response == null) {
+                return false;
+            }
+
+            // Check if either NYSE or NASDAQ is open
+            if (response.exchanges() != null) {
+                String nyse = response.exchanges().get("nyse");
+                String nasdaq = response.exchanges().get("nasdaq");
+                return "open".equalsIgnoreCase(nyse) || "open".equalsIgnoreCase(nasdaq);
+            }
+
+            return "open".equalsIgnoreCase(response.market());
+        } catch (Exception e) {
+            log.error("Error checking market status: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get detailed market status: OPEN, PRE_MARKET, AFTER_HOURS, or CLOSED.
+     */
+    public Map<String, String> getDetailedMarketStatus() {
+        try {
+            MassiveMarketStatusResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1/marketstatus/now")
+                            .queryParam("apiKey", apiKey)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(MassiveMarketStatusResponse.class)
+                    .block();
+
+            if (response == null) {
+                return Map.of("status", "CLOSED");
+            }
+
+            String status;
+
+            // Check if main exchanges are open
+            boolean exchangesOpen = false;
+            if (response.exchanges() != null) {
+                String nyse = response.exchanges().get("nyse");
+                String nasdaq = response.exchanges().get("nasdaq");
+                exchangesOpen = "open".equalsIgnoreCase(nyse) || "open".equalsIgnoreCase(nasdaq);
+            }
+
+            if (exchangesOpen || "open".equalsIgnoreCase(response.market())) {
+                status = "OPEN";
+            } else if (response.earlyHours() != null && response.earlyHours()) {
+                status = "PRE_MARKET";
+            } else if (response.afterHours() != null && response.afterHours()) {
+                status = "AFTER_HOURS";
+            } else {
+                status = "CLOSED";
+            }
+
+            return Map.of(
+                    "status", status,
+                    "serverTime", response.serverTime() != null ? response.serverTime() : ""
+            );
+        } catch (Exception e) {
+            log.error("Error checking detailed market status: {}", e.getMessage());
+            return Map.of("status", "CLOSED");
+        }
+    }
+
+    // ========================
+    // PREVIOUS DAY BAR
+    // ========================
+
+    /**
+     * Get previous trading day's bar.
+     * GET /v2/aggs/ticker/{ticker}/prev
+     */
+    public MassiveBar getPreviousDayBar(String symbol) {
+        try {
+            MassiveAggregatesResponse response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v2/aggs/ticker/{ticker}/prev")
+                            .queryParam("adjusted", true)
+                            .queryParam("apiKey", apiKey)
+                            .build(symbol.toUpperCase()))
+                    .retrieve()
+                    .bodyToMono(MassiveAggregatesResponse.class)
+                    .block();
+
+            if (response != null && response.results() != null && !response.results().isEmpty()) {
+                return response.results().getFirst();
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("Error fetching previous day bar for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
+    // ========================
+    // NEWS
+    // ========================
+
+    /**
+     * Get recent news articles, optionally filtered by ticker.
+     * GET /v2/reference/news
+     */
+    public MassiveNewsResponse getNews(String ticker, Integer limit, String order, String sort) {
+        try {
+            log.info("Fetching news: ticker={}, limit={}", LogSanitizer.safe(ticker), limit);
+
+            MassiveNewsResponse response = client.get()
+                    .uri(uriBuilder -> {
+                        uriBuilder.path("/v2/reference/news");
+                        if (ticker != null && !ticker.isBlank()) {
+                            uriBuilder.queryParam("ticker", ticker.toUpperCase());
+                        }
+                        if (limit != null) {
+                            uriBuilder.queryParam("limit", limit);
+                        }
+                        if (order != null && !order.isBlank()) {
+                            uriBuilder.queryParam("order", order);
+                        }
+                        if (sort != null && !sort.isBlank()) {
+                            uriBuilder.queryParam("sort", sort);
+                        }
+                        uriBuilder.queryParam("apiKey", apiKey);
+                        return uriBuilder.build();
+                    })
+                    .retrieve()
+                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                            clientResponse -> {
+                                log.error("Massive.com API error for news: HTTP {}", clientResponse.statusCode());
+                                return clientResponse.bodyToMono(String.class)
+                                        .map(body -> new RuntimeException("API error: " + body));
+                            })
+                    .bodyToMono(MassiveNewsResponse.class)
+                    .block();
+
+            if (response == null) {
+                log.warn("Null response fetching news");
+                return null;
+            }
+
+            log.info("Fetched {} news articles", response.count());
+            return response;
+        } catch (Exception e) {
+            log.error("Error fetching news: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    // ========================
+    // MARKET CALENDAR
+    // ========================
+
+    /**
+     * Fetch upcoming market holidays.
+     * GET /v1/marketstatus/upcoming
+     */
+    public List<MassiveMarketHoliday> getUpcomingHolidays() {
+        try {
+            List<MassiveMarketHoliday> response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1/marketstatus/upcoming")
+                            .queryParam("apiKey", apiKey)
+                            .build())
+                    .retrieve()
+                    .bodyToFlux(MassiveMarketHoliday.class)
+                    .collectList()
+                    .block();
+
+            return response != null ? response : Collections.emptyList();
+        } catch (Exception e) {
+            log.error("Error fetching upcoming market holidays: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // ========================
+    // UTILITY
+    // ========================
+
+    /**
+     * Convert Unix milliseconds timestamp to LocalDate.
+     */
+    public static LocalDate millisToLocalDate(Long millis) {
+        if (millis == null) return null;
+        return Instant.ofEpochMilli(millis)
+                .atZone(ZoneId.of("America/New_York"))
+                .toLocalDate();
+    }
+
+    /**
+     * Map Massive.com MIC exchange codes to readable names.
+     */
+    public static String mapExchangeCode(String micCode) {
+        if (micCode == null) return "Unknown";
+        return switch (micCode) {
+            case "XNAS" -> "NASDAQ";
+            case "XNYS" -> "NYSE";
+            case "XASE" -> "NYSE American";
+            case "ARCX" -> "NYSE Arca";
+            case "BATS" -> "CBOE BZX";
+            case "XCHI" -> "Chicago Stock Exchange";
+            default -> micCode;
+        };
+    }
+}
+
+
