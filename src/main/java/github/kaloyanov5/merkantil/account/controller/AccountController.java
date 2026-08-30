@@ -50,8 +50,6 @@ public class AccountController {
             }
             BalanceResponse balance = accountService.getBalance(id);
             return ResponseEntity.ok(balance);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
@@ -93,8 +91,6 @@ public class AccountController {
                     "message", "Deposit successful",
                     "balance", balance
             ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
@@ -120,8 +116,6 @@ public class AccountController {
                     "message", "Withdrawal successful",
                     "balance", balance
             ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
@@ -142,8 +136,6 @@ public class AccountController {
                     "message", "Transfer successful",
                     "balance", balance
             ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }

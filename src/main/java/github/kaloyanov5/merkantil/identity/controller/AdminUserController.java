@@ -57,13 +57,9 @@ public class AdminUserController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            ensureUserExists(id);
-            Page<TransactionResponse> transactions = transactionService.getUserTransactions(id, page, size);
-            return ResponseEntity.ok(transactions);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        ensureUserExists(id);
+        Page<TransactionResponse> transactions = transactionService.getUserTransactions(id, page, size);
+        return ResponseEntity.ok(transactions);
     }
 
     /**
@@ -72,14 +68,10 @@ public class AdminUserController {
     @GetMapping("/{id}/portfolio")
     @Operation(summary = "Get user portfolio", description = "Returns current holdings and portfolio summary for any user. Requires ADMIN role.")
     public ResponseEntity<?> getUserPortfolio(@PathVariable Long id) {
-        try {
-            ensureUserExists(id);
-            List<PortfolioResponse> holdings = portfolioService.getUserPortfolio(id);
-            PortfolioService.PortfolioSummary summary = portfolioService.getPortfolioSummary(id);
-            return ResponseEntity.ok(Map.of("holdings", holdings, "summary", summary));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        ensureUserExists(id);
+        List<PortfolioResponse> holdings = portfolioService.getUserPortfolio(id);
+        PortfolioService.PortfolioSummary summary = portfolioService.getPortfolioSummary(id);
+        return ResponseEntity.ok(Map.of("holdings", holdings, "summary", summary));
     }
 
     /**
@@ -92,13 +84,9 @@ public class AdminUserController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            ensureUserExists(id);
-            Page<OrderResponse> orders = orderService.getUserOrders(id, page, size);
-            return ResponseEntity.ok(orders);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        ensureUserExists(id);
+        Page<OrderResponse> orders = orderService.getUserOrders(id, page, size);
+        return ResponseEntity.ok(orders);
     }
 
     /**
@@ -111,14 +99,10 @@ public class AdminUserController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            ensureUserExists(id);
-            BalanceResponse balance = accountService.getBalance(id);
-            Page<WalletTransactionResponse> history = accountService.getWalletHistory(id, page, size);
-            return ResponseEntity.ok(Map.of("balance", balance, "history", history));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        ensureUserExists(id);
+        BalanceResponse balance = accountService.getBalance(id);
+        Page<WalletTransactionResponse> history = accountService.getWalletHistory(id, page, size);
+        return ResponseEntity.ok(Map.of("balance", balance, "history", history));
     }
 
     /**
@@ -127,13 +111,9 @@ public class AdminUserController {
     @GetMapping("/{id}/sessions")
     @Operation(summary = "Get user active sessions", description = "Returns active login sessions for any user. Requires ADMIN role.")
     public ResponseEntity<?> getUserSessions(@PathVariable Long id) {
-        try {
-            ensureUserExists(id);
-            List<LoginSessionResponse> sessions = loginSessionService.getActiveSessions(id, null);
-            return ResponseEntity.ok(sessions);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        ensureUserExists(id);
+        List<LoginSessionResponse> sessions = loginSessionService.getActiveSessions(id, null);
+        return ResponseEntity.ok(sessions);
     }
 
     /**
@@ -142,19 +122,15 @@ public class AdminUserController {
     @PostMapping("/{id}/ban")
     @Operation(summary = "Ban user", description = "Bans a user account and revokes all active sessions. Requires ADMIN role.")
     public ResponseEntity<?> banUser(@PathVariable Long id) {
-        try {
-            User user = userRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
-            if (Boolean.TRUE.equals(user.getBanned())) {
-                return ResponseEntity.badRequest().body(Map.of("error", "User is already banned"));
-            }
-            user.setBanned(true);
-            userRepository.save(user);
-            loginSessionService.revokeAllSessions(id);
-            return ResponseEntity.ok(Map.of("message", "User banned and all sessions revoked"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (Boolean.TRUE.equals(user.getBanned())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "User is already banned"));
         }
+        user.setBanned(true);
+        userRepository.save(user);
+        loginSessionService.revokeAllSessions(id);
+        return ResponseEntity.ok(Map.of("message", "User banned and all sessions revoked"));
     }
 
     /**
@@ -163,18 +139,14 @@ public class AdminUserController {
     @PostMapping("/{id}/unban")
     @Operation(summary = "Unban user", description = "Restores a banned user account. Requires ADMIN role.")
     public ResponseEntity<?> unbanUser(@PathVariable Long id) {
-        try {
-            User user = userRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
-            if (!Boolean.TRUE.equals(user.getBanned())) {
-                return ResponseEntity.badRequest().body(Map.of("error", "User is not banned"));
-            }
-            user.setBanned(false);
-            userRepository.save(user);
-            return ResponseEntity.ok(Map.of("message", "User unbanned successfully"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (!Boolean.TRUE.equals(user.getBanned())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "User is not banned"));
         }
+        user.setBanned(false);
+        userRepository.save(user);
+        return ResponseEntity.ok(Map.of("message", "User unbanned successfully"));
     }
 
     /**

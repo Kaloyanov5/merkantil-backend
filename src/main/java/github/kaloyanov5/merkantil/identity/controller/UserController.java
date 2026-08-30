@@ -52,12 +52,8 @@ public class UserController {
             @ApiResponse(responseCode = "403", description = "Insufficient permissions - ADMIN role required")
     })
     public ResponseEntity<?> getUserById(@PathVariable Long id) {
-        try {
-            UserResponse user = userService.getUserById(id);
-            return ResponseEntity.ok(user);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        UserResponse user = userService.getUserById(id);
+        return ResponseEntity.ok(user);
     }
 
     @GetMapping
@@ -154,8 +150,6 @@ public class UserController {
             userService.changePassword(currentUser.getId(), request);
             authService.logout(httpRequest, httpResponse);
             return ResponseEntity.ok(Map.of("message", "Password changed successfully. Please log in again."));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
@@ -195,8 +189,6 @@ public class UserController {
             User currentUser = authService.getCurrentUser();
             loginSessionService.revokeSession(currentUser.getId(), sessionId);
             return ResponseEntity.ok(Map.of("message", "Session revoked"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }

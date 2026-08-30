@@ -41,12 +41,8 @@ public class AuthController {
             @ApiResponse(responseCode = "400", description = "Invalid input or email already in use")
     })
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
-        try {
-            AuthResponse response = authService.register(request, clientIpExtractor.extract(httpRequest));
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        AuthResponse response = authService.register(request, clientIpExtractor.extract(httpRequest));
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PostMapping("/login")
@@ -71,12 +67,8 @@ public class AuthController {
     })
     public ResponseEntity<?> verify2fa(@Valid @RequestBody TwoFactorVerifyRequest request,
                                        HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        try {
-            AuthResponse response = authService.verify2fa(request.tempToken(), request.code(), httpRequest, httpResponse);
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        AuthResponse response = authService.verify2fa(request.tempToken(), request.code(), httpRequest, httpResponse);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/2fa/enable")
@@ -91,8 +83,6 @@ public class AuthController {
         try {
             authService.enable2fa(request.currentPassword());
             return ResponseEntity.ok(Map.of("message", "Two-factor authentication enabled"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
         }
@@ -110,8 +100,6 @@ public class AuthController {
         try {
             authService.disable2fa(request.currentPassword());
             return ResponseEntity.ok(Map.of("message", "Two-factor authentication disabled"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
         }
@@ -144,12 +132,8 @@ public class AuthController {
             @ApiResponse(responseCode = "400", description = "Invalid or expired reset code")
     })
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        try {
-            authService.resetPassword(request.email(), request.code(), request.newPassword());
-            return ResponseEntity.ok(Map.of("message", "Password reset successfully"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        authService.resetPassword(request.email(), request.code(), request.newPassword());
+        return ResponseEntity.ok(Map.of("message", "Password reset successfully"));
     }
 
     @GetMapping("/verify-email")
@@ -159,12 +143,8 @@ public class AuthController {
             @ApiResponse(responseCode = "400", description = "Invalid or expired token")
     })
     public ResponseEntity<?> verifyEmail(@RequestParam String token, HttpServletRequest httpRequest) {
-        try {
-            authService.verifyEmail(token, clientIpExtractor.extract(httpRequest));
-            return ResponseEntity.ok(Map.of("message", "Email verified successfully"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        authService.verifyEmail(token, clientIpExtractor.extract(httpRequest));
+        return ResponseEntity.ok(Map.of("message", "Email verified successfully"));
     }
 
     @GetMapping("/me")

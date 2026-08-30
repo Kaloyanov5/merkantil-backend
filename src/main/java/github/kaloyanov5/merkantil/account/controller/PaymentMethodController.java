@@ -54,8 +54,6 @@ public class PaymentMethodController {
             User currentUser = authService.getCurrentUser();
             PaymentMethodResponse response = paymentMethodService.addPaymentMethod(currentUser.getId(), request);
             return ResponseEntity.status(201).body(response);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
@@ -73,8 +71,6 @@ public class PaymentMethodController {
             User currentUser = authService.getCurrentUser();
             paymentMethodService.deletePaymentMethod(currentUser.getId(), id);
             return ResponseEntity.ok(Map.of("message", "Payment method removed"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }

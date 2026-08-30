@@ -54,8 +54,6 @@ public class WatchlistController {
             User user = authService.getCurrentUser();
             watchlistService.addToWatchlist(user, symbol);
             return ResponseEntity.ok(Map.of("message", symbol.toUpperCase() + " added to watchlist"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "User not authenticated"));
@@ -74,8 +72,6 @@ public class WatchlistController {
             User user = authService.getCurrentUser();
             watchlistService.removeFromWatchlist(user, symbol);
             return ResponseEntity.ok(Map.of("message", symbol.toUpperCase() + " removed from watchlist"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "User not authenticated"));
