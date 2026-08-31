@@ -27,8 +27,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import github.kaloyanov5.merkantil.analytics.error.AnalyticsError;
+import github.kaloyanov5.merkantil.common.error.AppException;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -231,9 +234,11 @@ class PortfolioGrowthServiceTest {
     @Test
     @DisplayName("custom range: startDate after endDate throws")
     void customRange_invalidDates_throws() {
-        assertThatThrownBy(() -> service.getPortfolioGrowthCustomRange(1L, DAY_3, DAY_1))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Start date");
+        Throwable thrown = catchThrowable(
+                () -> service.getPortfolioGrowthCustomRange(1L, DAY_3, DAY_1));
+        assertThat(thrown).isInstanceOf(AppException.class);
+        assertThat(((AppException) thrown).getErrorCode())
+                .isEqualTo(AnalyticsError.INVALID_DATE_RANGE);
     }
 
     @Test

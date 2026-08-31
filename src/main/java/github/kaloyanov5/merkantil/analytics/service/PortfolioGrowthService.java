@@ -1,6 +1,8 @@
 package github.kaloyanov5.merkantil.analytics.service;
 
 import github.kaloyanov5.merkantil.analytics.controller.dto.response.PortfolioGrowthResponse;
+import github.kaloyanov5.merkantil.analytics.error.AnalyticsError;
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.marketdata.model.StockPriceHistory;
 import github.kaloyanov5.merkantil.marketdata.repository.StockPriceHistoryRepository;
 import github.kaloyanov5.merkantil.marketdata.util.MarketCalendar;
@@ -197,7 +199,7 @@ public class PortfolioGrowthService {
                 userId, startDate, endDate);
 
         if (startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("Start date must be before or equal to end date");
+            throw new AppException(AnalyticsError.INVALID_DATE_RANGE);
         }
 
         List<LocalDate> tradingDays = getTradingDaysInRange(startDate, endDate);

@@ -1,6 +1,8 @@
 package github.kaloyanov5.merkantil.identity.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.identity.controller.dto.response.LoginSessionResponse;
+import github.kaloyanov5.merkantil.identity.error.IdentityError;
 import github.kaloyanov5.merkantil.identity.model.LoginSession;
 import github.kaloyanov5.merkantil.identity.repository.LoginSessionRepository;
 import github.kaloyanov5.merkantil.common.web.ClientIpExtractor;
@@ -68,7 +70,7 @@ public class LoginSessionService {
     public void revokeSession(Long userId, String sessionId) {
         loginSessionRepository.findBySessionId(sessionId).ifPresent(ls -> {
             if (!ls.getUserId().equals(userId)) {
-                throw new IllegalArgumentException("Session not found");
+                throw new AppException(IdentityError.SESSION_NOT_FOUND);
             }
             sessionRepository.deleteById(sessionId);
             loginSessionRepository.deleteBySessionId(sessionId);
