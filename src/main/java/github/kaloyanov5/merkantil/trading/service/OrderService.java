@@ -1,9 +1,12 @@
 package github.kaloyanov5.merkantil.trading.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
 import github.kaloyanov5.merkantil.portfolio.model.Portfolio;
 import github.kaloyanov5.merkantil.portfolio.model.Transaction;
+import github.kaloyanov5.merkantil.trading.error.TradingError;
 import github.kaloyanov5.merkantil.trading.model.Order;
 import github.kaloyanov5.merkantil.trading.model.enums.OrderStatus;
 import github.kaloyanov5.merkantil.trading.model.enums.OrderType;
@@ -68,17 +71,17 @@ public class OrderService {
         // Pessimistic-lock the user row so concurrent orders for the same user
         // serialize on the balance read-modify-write.
         User user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         if (Boolean.TRUE.equals(user.getBanned())) {
-            throw new IllegalArgumentException("Your account has been suspended");
+            throw new AppException(CommonError.ACCOUNT_SUSPENDED);
         }
 
         Stock stock = stockRepository.findBySymbol(request.symbol().toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + request.symbol()));
+                .orElseThrow(() -> new AppException(TradingError.STOCK_NOT_FOUND, "Stock not found: " + request.symbol()));
 
         if (!stock.getIsActive()) {
-            throw new IllegalArgumentException("Stock is not active for trading");
+            throw new AppException(TradingError.STOCK_NOT_TRADEABLE);
         }
 
         OrderType orderType = OrderType.valueOf(request.orderType().toUpperCase());
@@ -86,7 +89,7 @@ public class OrderService {
 
         if (orderType == OrderType.LIMIT) {
             if (request.limitPrice() == null || request.limitPrice().signum() <= 0) {
-                throw new IllegalArgumentException("Limit price is required for LIMIT orders");
+                throw new AppException(TradingError.LIMIT_PRICE_REQUIRED);
             }
             // Reject limit prices wildly out of line with the last-known market
             // price (defaults to ±50% band). This stops grief-fills like a SELL
@@ -97,7 +100,7 @@ public class OrderService {
                 BigDecimal lower = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_LOWER_BAND));
                 BigDecimal upper = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_UPPER_BAND));
                 if (request.limitPrice().compareTo(lower) < 0 || request.limitPrice().compareTo(upper) > 0) {
-                    throw new IllegalArgumentException(String.format(
+                    throw new AppException(TradingError.LIMIT_PRICE_OUT_OF_RANGE, String.format(
                             "Limit price $%s is outside the allowed range ($%s – $%s) for %s based on the last market price",
                             request.limitPrice(), lower, upper, stock.getSymbol()));
                 }
@@ -112,7 +115,7 @@ public class OrderService {
         // any session and queue until their price condition is met.
         String session = marketSessionService.getCurrentSession();
         if (!"OPEN".equals(session)) {
-            throw new IllegalArgumentException(
+            throw new AppException(TradingError.MARKET_CLOSED,
                     "The market is currently " + describeSession(session) + ". Market orders can only be "
                             + "placed during regular trading hours (9:30 AM - 4:00 PM ET). Place a limit order instead.");
         }
@@ -140,7 +143,7 @@ public class OrderService {
         BigDecimal reserved = MoneyUtil.multiply(request.limitPrice(), request.quantity());
 
         if (user.getBalance().compareTo(reserved) < 0) {
-            throw new IllegalArgumentException(
+            throw new AppException(TradingError.INSUFFICIENT_FUNDS,
                     String.format("Insufficient funds. Required: $%.2f, Available: $%.2f",
                             reserved, user.getBalance()));
         }
@@ -168,10 +171,10 @@ public class OrderService {
      */
     private OrderResponse placeLimitSellOrder(User user, Stock stock, OrderRequest request) {
         Portfolio portfolio = portfolioRepository.findByUserIdAndSymbolForUpdate(user.getId(), stock.getSymbol())
-                .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
+                .orElseThrow(() -> new AppException(TradingError.NO_POSITION, "You don't own any shares of " + stock.getSymbol()));
 
         if (portfolio.getQuantity() < request.quantity()) {
-            throw new IllegalArgumentException(
+            throw new AppException(TradingError.INSUFFICIENT_SHARES,
                     String.format("Insufficient shares. You own %d but tried to sell %d",
                             portfolio.getQuantity(), request.quantity()));
         }
@@ -201,7 +204,7 @@ public class OrderService {
     @Transactional
     public void executeLimitOrder(Long orderId, BigDecimal executionPrice) {
         Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+                .orElseThrow(() -> new AppException(TradingError.ORDER_NOT_FOUND, "Order not found: " + orderId));
 
         if (order.getStatus() != OrderStatus.OPEN) {
             log.debug("Skipping limit order {} — status is {}", orderId, order.getStatus());
@@ -209,7 +212,7 @@ public class OrderService {
         }
 
         User user = userRepository.findByIdForUpdate(order.getUser().getId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND, "User not found"));
 
         if (order.getType() == Side.BUY) {
             // Funds already reserved — just update portfolio and create transaction
@@ -284,22 +287,22 @@ public class OrderService {
         // Lock the order row first so a scheduler tick can't fill it between
         // the status check and the cancellation write.
         Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+                .orElseThrow(() -> new AppException(TradingError.ORDER_NOT_FOUND, "Order not found"));
 
         if (!order.getUser().getId().equals(userId)) {
-            throw new IllegalArgumentException("Order does not belong to you");
+            throw new AppException(TradingError.ORDER_NOT_FOUND, "Order not found or access denied");
         }
         if (order.getStatus() != OrderStatus.OPEN) {
-            throw new IllegalArgumentException("Only open orders can be cancelled");
+            throw new AppException(TradingError.ORDER_NOT_CANCELLABLE, "Only open orders can be cancelled");
         }
         if (order.getOrderType() != OrderType.LIMIT) {
-            throw new IllegalArgumentException("Only limit orders can be cancelled");
+            throw new AppException(TradingError.ORDER_NOT_CANCELLABLE, "Only limit orders can be cancelled");
         }
 
         // Refund reserved funds for BUY orders — lock the user row first
         if (order.getType() == Side.BUY) {
             User user = userRepository.findByIdForUpdate(userId)
-                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                    .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND, "User not found"));
             BigDecimal refund = MoneyUtil.multiply(order.getLimitPrice(), order.getQuantity());
             user.setBalance(user.getBalance().add(refund));
             userRepository.save(user);
@@ -320,7 +323,7 @@ public class OrderService {
 
         // Check if user has sufficient funds
         if (user.getBalance().compareTo(totalCost) < 0) {
-            throw new IllegalArgumentException(
+            throw new AppException(TradingError.INSUFFICIENT_FUNDS,
                     String.format("Insufficient funds. Required: $%.2f, Available: $%.2f",
                             totalCost, user.getBalance())
             );
@@ -367,11 +370,11 @@ public class OrderService {
         // Check if user owns the stock (locked so concurrent SELL on the same
         // position cannot both pass the quantity check).
         Portfolio portfolio = portfolioRepository.findByUserIdAndSymbolForUpdate(user.getId(), stock.getSymbol())
-                .orElseThrow(() -> new IllegalArgumentException("You don't own any shares of " + stock.getSymbol()));
+                .orElseThrow(() -> new AppException(TradingError.NO_POSITION, "You don't own any shares of " + stock.getSymbol()));
 
         // Check if user has enough shares
         if (portfolio.getQuantity() < request.quantity()) {
-            throw new IllegalArgumentException(
+            throw new AppException(TradingError.INSUFFICIENT_SHARES,
                     String.format("Insufficient shares. You own %d shares but trying to sell %d",
                             portfolio.getQuantity(), request.quantity())
             );
@@ -481,7 +484,7 @@ public class OrderService {
             return stock.getCurrentPrice();
         }
 
-        throw new IllegalArgumentException("Unable to determine market price for " + stock.getSymbol() + ". Please try again shortly.");
+        throw new AppException(TradingError.PRICE_UNAVAILABLE, "Unable to determine market price for " + stock.getSymbol() + ". Please try again shortly.");
     }
 
     /**

@@ -1,5 +1,8 @@
 package github.kaloyanov5.merkantil.trading;
 
+import github.kaloyanov5.merkantil.trading.error.TradingError;
+import github.kaloyanov5.merkantil.common.error.CommonError;
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.notification.service.EmailService;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
@@ -39,6 +42,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -135,8 +139,8 @@ class OrderServiceTest {
         user.setBalance(new BigDecimal("100.00"));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 10)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Insufficient funds");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.INSUFFICIENT_FUNDS);
 
         verify(orderRepository, never()).save(any());
         verify(transactionRepository, never()).save(any());
@@ -218,8 +222,8 @@ class OrderServiceTest {
         when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("SELL", 5)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Insufficient shares");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.INSUFFICIENT_SHARES);
     }
 
     @Test
@@ -229,8 +233,8 @@ class OrderServiceTest {
         when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("SELL", 5)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("don't own");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.NO_POSITION);
     }
 
     // ---------- VALIDATION ----------
@@ -241,8 +245,8 @@ class OrderServiceTest {
         user.setBanned(true);
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("suspended");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(CommonError.ACCOUNT_SUSPENDED);
 
         verifyNoInteractions(massiveApiService);
     }
@@ -253,8 +257,8 @@ class OrderServiceTest {
         stock.setIsActive(false);
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("not active");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.STOCK_NOT_TRADEABLE);
     }
 
     @Test
@@ -262,9 +266,9 @@ class OrderServiceTest {
     void unknownUser_throws() {
         when(userRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.placeOrder(99L, marketOrder("BUY", 1)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("User not found");
+        Throwable thrown = catchThrowable(() -> orderService.placeOrder(99L, marketOrder("BUY", 1)));
+        assertThat(thrown).isInstanceOf(AppException.class);
+        assertThat(((AppException) thrown).getErrorCode()).isEqualTo(CommonError.USER_NOT_FOUND);
     }
 
     @Test
@@ -273,8 +277,8 @@ class OrderServiceTest {
         when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("regular trading hours");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.MARKET_CLOSED);
 
         verify(orderRepository, never()).save(any());
         verify(massiveApiService, never()).getSnapshot(any());
@@ -286,8 +290,8 @@ class OrderServiceTest {
         when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("pre-market");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.MARKET_CLOSED);
     }
 
     // ---------- LIMIT ORDERS ----------
@@ -321,8 +325,8 @@ class OrderServiceTest {
         user.setBalance(new BigDecimal("100.00"));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, limitOrder("BUY", 10, 140.0)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Insufficient funds");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.INSUFFICIENT_FUNDS);
 
         verify(orderRepository, never()).save(any());
     }
@@ -333,8 +337,8 @@ class OrderServiceTest {
         OrderRequest req = new OrderRequest("AAPL", "BUY", 10, "LIMIT", null);
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, req))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Limit price is required");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.LIMIT_PRICE_REQUIRED);
     }
 
     @Test
@@ -349,8 +353,8 @@ class OrderServiceTest {
         when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, limitOrder("SELL", 5, 200.0)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Insufficient shares");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.INSUFFICIENT_SHARES);
     }
 
     @Test
@@ -396,8 +400,8 @@ class OrderServiceTest {
         when(orderRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(other));
 
         assertThatThrownBy(() -> orderService.cancelOrder(1L, 42L))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("does not belong to you");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.ORDER_NOT_FOUND);
     }
 
     @Test
@@ -411,8 +415,8 @@ class OrderServiceTest {
         when(orderRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(filled));
 
         assertThatThrownBy(() -> orderService.cancelOrder(1L, 42L))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("open orders");
+                .isInstanceOf(AppException.class)
+                .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.ORDER_NOT_CANCELLABLE);
     }
 
     @Test
