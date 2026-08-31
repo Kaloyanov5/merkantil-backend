@@ -33,13 +33,9 @@ public class PaymentMethodController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> getPaymentMethods() {
-        try {
-            User currentUser = authService.getCurrentUser();
-            List<PaymentMethodResponse> methods = paymentMethodService.getPaymentMethods(currentUser.getId());
-            return ResponseEntity.ok(methods);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        List<PaymentMethodResponse> methods = paymentMethodService.getPaymentMethods(currentUser.getId());
+        return ResponseEntity.ok(methods);
     }
 
     @PostMapping
@@ -50,13 +46,9 @@ public class PaymentMethodController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> addPaymentMethod(@Valid @RequestBody PaymentMethodRequest request) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            PaymentMethodResponse response = paymentMethodService.addPaymentMethod(currentUser.getId(), request);
-            return ResponseEntity.status(201).body(response);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        PaymentMethodResponse response = paymentMethodService.addPaymentMethod(currentUser.getId(), request);
+        return ResponseEntity.status(201).body(response);
     }
 
     @DeleteMapping("/{id}")
@@ -67,12 +59,8 @@ public class PaymentMethodController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> deletePaymentMethod(@PathVariable Long id) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            paymentMethodService.deletePaymentMethod(currentUser.getId(), id);
-            return ResponseEntity.ok(Map.of("message", "Payment method removed"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        paymentMethodService.deletePaymentMethod(currentUser.getId(), id);
+        return ResponseEntity.ok(Map.of("message", "Payment method removed"));
     }
 }

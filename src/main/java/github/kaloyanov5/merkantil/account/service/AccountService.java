@@ -1,5 +1,8 @@
 package github.kaloyanov5.merkantil.account.service;
 
+import github.kaloyanov5.merkantil.account.error.AccountError;
+import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
 import github.kaloyanov5.merkantil.account.controller.dto.request.TransferRequest;
 import github.kaloyanov5.merkantil.account.controller.dto.response.BalanceResponse;
@@ -43,7 +46,7 @@ public class AccountService {
 
     public BalanceResponse getBalance(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         return new BalanceResponse(user.getId(), user.getBalance());
     }
 
@@ -52,27 +55,27 @@ public class AccountService {
         // Endpoint is ROLE_ADMIN gated at the controller; no per-user self-match
         // check here because admins credit any user's account.
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Deposit amount must be positive");
+            throw new AppException(AccountError.INVALID_AMOUNT, "Deposit amount must be positive");
         }
         if (amount.compareTo(MAX_DEPOSIT) > 0) {
-            throw new IllegalArgumentException("Deposit amount cannot exceed $25,000 per transaction");
+            throw new AppException(AccountError.INVALID_AMOUNT, "Deposit amount cannot exceed $25,000 per transaction");
         }
 
         User user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         if (Boolean.TRUE.equals(user.getBanned())) {
-            throw new IllegalArgumentException("Your account has been suspended");
+            throw new AppException(CommonError.ACCOUNT_SUSPENDED);
         }
 
         PaymentMethod paymentMethod = null;
         if (paymentMethodId != null) {
             paymentMethod = paymentMethodRepository.findByIdAndUserIdAndDeletedAtIsNull(paymentMethodId, userId)
-                    .orElseThrow(() -> new IllegalArgumentException("Payment method not found"));
+                    .orElseThrow(() -> new AppException(AccountError.PAYMENT_METHOD_NOT_FOUND));
 
             YearMonth expiry = YearMonth.of(paymentMethod.getExpiryYear(), paymentMethod.getExpiryMonth());
             if (expiry.isBefore(YearMonth.now())) {
-                throw new IllegalArgumentException("Card ending in " + paymentMethod.getLast4() + " has expired");
+                throw new AppException(AccountError.CARD_EXPIRED, "Card ending in " + paymentMethod.getLast4() + " has expired");
             }
         }
 
@@ -94,21 +97,21 @@ public class AccountService {
         // Endpoint is ROLE_ADMIN gated at the controller; admins withdraw on
         // behalf of any user, so no self-match check here.
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Withdrawal amount must be positive");
+            throw new AppException(AccountError.INVALID_AMOUNT, "Withdrawal amount must be positive");
         }
         if (amount.compareTo(MAX_WITHDRAWAL) > 0) {
-            throw new IllegalArgumentException("Withdrawal amount cannot exceed $10,000 per transaction");
+            throw new AppException(AccountError.INVALID_AMOUNT, "Withdrawal amount cannot exceed $10,000 per transaction");
         }
 
         User user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         if (Boolean.TRUE.equals(user.getBanned())) {
-            throw new IllegalArgumentException("Your account has been suspended");
+            throw new AppException(CommonError.ACCOUNT_SUSPENDED);
         }
 
         if (user.getBalance().compareTo(amount) < 0) {
-            throw new IllegalArgumentException("Insufficient funds");
+            throw new AppException(AccountError.INSUFFICIENT_FUNDS);
         }
 
         user.setBalance(user.getBalance().subtract(amount));
@@ -128,37 +131,36 @@ public class AccountService {
         rateLimiterService.enforce("transfer:" + senderId, MAX_TRANSFERS_PER_WINDOW, TRANSFER_RATE_WINDOW);
 
         if (request.amount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Transfer amount must be positive");
+            throw new AppException(AccountError.INVALID_AMOUNT, "Transfer amount must be positive");
         }
 
         // Resolve recipient (unlocked) just to obtain the id for the lock-ordered fetch
         User recipientLookup = userRepository.findByEmail(request.recipientEmail())
-                .orElseThrow(() -> new IllegalArgumentException("Recipient not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND, "Recipient not found"));
 
         if (senderId.equals(recipientLookup.getId())) {
-            throw new IllegalArgumentException("Cannot transfer funds to yourself");
+            throw new AppException(AccountError.CANNOT_TRANSFER_TO_SELF);
         }
 
         // Acquire pessimistic locks in id order to avoid A->B / B->A deadlocks
         Long firstId = Math.min(senderId, recipientLookup.getId());
         Long secondId = Math.max(senderId, recipientLookup.getId());
         User first = userRepository.findByIdForUpdate(firstId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         User second = userRepository.findByIdForUpdate(secondId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         User sender = firstId.equals(senderId) ? first : second;
         User recipient = firstId.equals(senderId) ? second : first;
 
         if (Boolean.TRUE.equals(sender.getBanned())) {
-            throw new IllegalArgumentException("Your account has been suspended");
+            throw new AppException(CommonError.ACCOUNT_SUSPENDED);
         }
         if (Boolean.TRUE.equals(recipient.getBanned())) {
-            throw new IllegalArgumentException("Recipient account is suspended");
+            throw new AppException(CommonError.ACCOUNT_SUSPENDED, "Recipient account is suspended");
         }
 
         if (sender.getBalance().compareTo(request.amount()) < 0) {
-            throw new IllegalArgumentException(
-                    String.format("Insufficient funds. Available: $%.2f", sender.getBalance()));
+            throw new AppException(AccountError.INSUFFICIENT_FUNDS);
         }
 
         sender.setBalance(sender.getBalance().subtract(request.amount()));

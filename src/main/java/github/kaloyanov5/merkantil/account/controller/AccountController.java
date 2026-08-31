@@ -42,17 +42,13 @@ public class AccountController {
             @ApiResponse(responseCode = "403", description = "Cannot view another user's balance")
     })
     public ResponseEntity<?> getBalance(@PathVariable Long id) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            if (!id.equals(currentUser.getId())) {
-                return ResponseEntity.status(403)
-                        .body(Map.of("error", "You can only view your own balance"));
-            }
-            BalanceResponse balance = accountService.getBalance(id);
-            return ResponseEntity.ok(balance);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        User currentUser = authService.getCurrentUser();
+        if (!id.equals(currentUser.getId())) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "You can only view your own balance"));
         }
+        BalanceResponse balance = accountService.getBalance(id);
+        return ResponseEntity.ok(balance);
     }
 
     @GetMapping("/me/balance")
@@ -62,13 +58,9 @@ public class AccountController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> getMyBalance() {
-        try {
-            User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = accountService.getBalance(currentUser.getId());
-            return ResponseEntity.ok(balance);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        BalanceResponse balance = accountService.getBalance(currentUser.getId());
+        return ResponseEntity.ok(balance);
     }
 
     @PostMapping("/{id}/deposit")
@@ -85,15 +77,11 @@ public class AccountController {
             @PathVariable Long id,
             @Valid @RequestBody DepositRequest request
     ) {
-        try {
-            BalanceResponse balance = accountService.deposit(id, request.amount(), request.paymentMethodId());
-            return ResponseEntity.ok(Map.of(
-                    "message", "Deposit successful",
-                    "balance", balance
-            ));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        BalanceResponse balance = accountService.deposit(id, request.amount(), request.paymentMethodId());
+        return ResponseEntity.ok(Map.of(
+                "message", "Deposit successful",
+                "balance", balance
+        ));
     }
 
     @PostMapping("/{id}/withdraw")
@@ -110,15 +98,11 @@ public class AccountController {
             @PathVariable Long id,
             @Valid @RequestBody DepositRequest request
     ) {
-        try {
-            BalanceResponse balance = accountService.withdraw(id, request.amount());
-            return ResponseEntity.ok(Map.of(
-                    "message", "Withdrawal successful",
-                    "balance", balance
-            ));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        BalanceResponse balance = accountService.withdraw(id, request.amount());
+        return ResponseEntity.ok(Map.of(
+                "message", "Withdrawal successful",
+                "balance", balance
+        ));
     }
 
     @PostMapping("/me/transfer")
@@ -129,16 +113,12 @@ public class AccountController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> transfer(@Valid @RequestBody TransferRequest request) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            BalanceResponse balance = accountService.transfer(currentUser.getId(), request);
-            return ResponseEntity.ok(Map.of(
-                    "message", "Transfer successful",
-                    "balance", balance
-            ));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        BalanceResponse balance = accountService.transfer(currentUser.getId(), request);
+        return ResponseEntity.ok(Map.of(
+                "message", "Transfer successful",
+                "balance", balance
+        ));
     }
 
     @GetMapping("/me/wallet/history")
@@ -151,12 +131,8 @@ public class AccountController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            Page<WalletTransactionResponse> history = accountService.getWalletHistory(currentUser.getId(), page, size);
-            return ResponseEntity.ok(history);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        Page<WalletTransactionResponse> history = accountService.getWalletHistory(currentUser.getId(), page, size);
+        return ResponseEntity.ok(history);
     }
 }

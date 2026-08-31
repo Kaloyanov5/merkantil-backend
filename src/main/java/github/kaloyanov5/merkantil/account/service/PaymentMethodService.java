@@ -2,7 +2,9 @@ package github.kaloyanov5.merkantil.account.service;
 
 import github.kaloyanov5.merkantil.account.controller.dto.request.PaymentMethodRequest;
 import github.kaloyanov5.merkantil.account.controller.dto.response.PaymentMethodResponse;
+import github.kaloyanov5.merkantil.account.error.AccountError;
 import github.kaloyanov5.merkantil.account.model.PaymentMethod;
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.account.repository.PaymentMethodRepository;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
@@ -29,9 +31,7 @@ public class PaymentMethodService {
 
         long existing = paymentMethodRepository.countByUserIdAndDeletedAtIsNull(userId);
         if (existing >= MAX_PAYMENT_METHODS_PER_USER) {
-            throw new IllegalArgumentException(
-                    "You can store at most " + MAX_PAYMENT_METHODS_PER_USER
-                            + " payment methods. Remove one before adding another.");
+            throw new AppException(AccountError.MAX_PAYMENT_METHODS_REACHED);
         }
 
         PaymentMethod pm = new PaymentMethod();
@@ -55,7 +55,7 @@ public class PaymentMethodService {
 
     public void deletePaymentMethod(Long userId, Long paymentMethodId) {
         PaymentMethod pm = paymentMethodRepository.findByIdAndUserIdAndDeletedAtIsNull(paymentMethodId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("Payment method not found"));
+                .orElseThrow(() -> new AppException(AccountError.PAYMENT_METHOD_NOT_FOUND));
         pm.setDeletedAt(LocalDateTime.now());
         paymentMethodRepository.save(pm);
     }
