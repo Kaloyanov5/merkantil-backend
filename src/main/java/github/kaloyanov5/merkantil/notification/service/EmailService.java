@@ -1,5 +1,7 @@
 package github.kaloyanov5.merkantil.notification.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -185,7 +187,7 @@ public class EmailService {
             log.info("Email sent to {}: {}", to, subject);
         } catch (MessagingException | UnsupportedEncodingException e) {
             log.error("Failed to send email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Failed to send email", e);
+            throw new AppException(CommonError.INTERNAL_SERVER_ERROR, "Failed to send email", e);
         }
     }
 }
