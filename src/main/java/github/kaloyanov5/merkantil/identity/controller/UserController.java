@@ -71,18 +71,14 @@ public class UserController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "DESC") String direction
     ) {
-        try {
-            // Validate sortBy parameter to prevent injection
-            if (!isValidSortField(sortBy)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Invalid sort field: " + sortBy));
-            }
-
-            Page<UserResponse> users = userService.getAllUsers(page, size, sortBy, direction);
-            return ResponseEntity.ok(users);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        // Validate sortBy parameter to prevent injection
+        if (!isValidSortField(sortBy)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Invalid sort field: " + sortBy));
         }
+
+        Page<UserResponse> users = userService.getAllUsers(page, size, sortBy, direction);
+        return ResponseEntity.ok(users);
     }
 
     @GetMapping("/search")
@@ -99,17 +95,13 @@ public class UserController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            if (query == null || query.trim().isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Search query cannot be empty"));
-            }
-
-            Page<UserResponse> users = userService.searchUsers(query.trim(), page, size);
-            return ResponseEntity.ok(users);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        if (query == null || query.trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Search query cannot be empty"));
         }
+
+        Page<UserResponse> users = userService.searchUsers(query.trim(), page, size);
+        return ResponseEntity.ok(users);
     }
 
     @Deprecated
@@ -145,36 +137,24 @@ public class UserController {
     public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest request,
                                             HttpServletRequest httpRequest,
                                             HttpServletResponse httpResponse) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            userService.changePassword(currentUser.getId(), request);
-            authService.logout(httpRequest, httpResponse);
-            return ResponseEntity.ok(Map.of("message", "Password changed successfully. Please log in again."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        userService.changePassword(currentUser.getId(), request);
+        authService.logout(httpRequest, httpResponse);
+        return ResponseEntity.ok(Map.of("message", "Password changed successfully. Please log in again."));
     }
 
     @GetMapping("/me/sessions")
     @Operation(summary = "Get active sessions", description = "Returns all currently active login sessions for the authenticated user. The current session is indicated in the response.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Active sessions returned successfully"),
-            @ApiResponse(responseCode = "401", description = "Not authenticated")
+            @ApiResponse(responseCode = "200", description = "Active sessions returned successfully")
     })
     public ResponseEntity<?> getActiveSessions(HttpServletRequest httpRequest) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            jakarta.servlet.http.HttpSession session = httpRequest.getSession(false);
-            String currentSessionId = session != null ? session.getId() : null;
-            java.util.List<LoginSessionResponse> sessions =
-                    loginSessionService.getActiveSessions(currentUser.getId(), currentSessionId);
-            return ResponseEntity.ok(sessions);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        } catch (Exception e) {
-            log.error("Error fetching sessions: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to fetch sessions"));
-        }
+        User currentUser = authService.getCurrentUser();
+        jakarta.servlet.http.HttpSession session = httpRequest.getSession(false);
+        String currentSessionId = session != null ? session.getId() : null;
+        java.util.List<LoginSessionResponse> sessions =
+                loginSessionService.getActiveSessions(currentUser.getId(), currentSessionId);
+        return ResponseEntity.ok(sessions);
     }
 
     @DeleteMapping("/me/sessions/{sessionId}")
@@ -185,13 +165,9 @@ public class UserController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> revokeSession(@PathVariable String sessionId) {
-        try {
-            User currentUser = authService.getCurrentUser();
-            loginSessionService.revokeSession(currentUser.getId(), sessionId);
-            return ResponseEntity.ok(Map.of("message", "Session revoked"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        User currentUser = authService.getCurrentUser();
+        loginSessionService.revokeSession(currentUser.getId(), sessionId);
+        return ResponseEntity.ok(Map.of("message", "Session revoked"));
     }
 
     private boolean isValidSortField(String field) {

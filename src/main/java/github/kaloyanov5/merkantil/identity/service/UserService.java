@@ -1,8 +1,11 @@
 package github.kaloyanov5.merkantil.identity.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
 import github.kaloyanov5.merkantil.identity.controller.dto.request.ChangePasswordRequest;
 import github.kaloyanov5.merkantil.identity.controller.dto.response.UserResponse;
+import github.kaloyanov5.merkantil.identity.error.IdentityError;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
 import jakarta.transaction.Transactional;
@@ -34,18 +37,18 @@ public class UserService {
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new AppException(IdentityError.INVALID_REQUEST_DATA, "Current password is incorrect.");
         }
 
         if (!request.newPassword().equals(request.confirmNewPassword())) {
-            throw new IllegalArgumentException("New passwords do not match");
+            throw new AppException(IdentityError.INVALID_REQUEST_DATA, "New passwords do not match.");
         }
 
         if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("New password must differ from current password");
+            throw new AppException(IdentityError.INVALID_REQUEST_DATA, "New password must differ from current password.");
         }
 
         user.setPassword(passwordEncoder.encode(request.newPassword()));
@@ -67,7 +70,7 @@ public class UserService {
 
     public UserResponse getUserById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         return mapToUserResponse(user);
     }
 

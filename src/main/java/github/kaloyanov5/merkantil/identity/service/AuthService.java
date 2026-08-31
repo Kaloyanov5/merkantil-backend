@@ -1,6 +1,9 @@
 package github.kaloyanov5.merkantil.identity.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
+import github.kaloyanov5.merkantil.identity.error.IdentityError;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.identity.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
@@ -85,7 +88,7 @@ public class AuthService {
             rateLimiterService.enforce("register:" + clientIp, MAX_REGISTER_PER_IP, REGISTER_WINDOW);
         }
         if (userRepository.existsByEmail(request.email())) {
-            throw new IllegalArgumentException("Email already exists");
+            throw new AppException(IdentityError.EMAIL_ALREADY_EXISTS);
         }
         User user = new User();
         user.setFirstName(request.firstName());
@@ -121,7 +124,7 @@ public class AuthService {
             );
         } catch (BadCredentialsException e) {
             rateLimiterService.penalize(rateKey, ATTEMPT_WINDOW);
-            throw e;
+            throw new AppException(IdentityError.INVALID_CREDENTIALS);
         }
 
         // Password was correct — clear attempts even if 2FA is still pending
@@ -129,7 +132,7 @@ public class AuthService {
 
         CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
         User user = userRepository.findById(principal.getId())
-                .orElseThrow(() -> new IllegalStateException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         // If 2FA is enabled, send OTP and pause login — session not created yet
         if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
@@ -187,18 +190,18 @@ public class AuthService {
     }
 
     public User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof CustomUserDetails principal) {
-            return userRepository.findById(principal.getId())
-                    .orElseThrow(() -> new IllegalStateException("User not found"));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof CustomUserDetails user) {
+            return userRepository.findById(user.getId())
+                    .orElseThrow(() -> new AppException(CommonError.NOT_AUTHENTICATED));
         }
-        throw new IllegalStateException("User not authenticated");
+        throw new AppException(CommonError.NOT_AUTHENTICATED);
     }
 
     public AuthResponse verify2fa(String tempToken, String code, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         String pending = redisTemplate.opsForValue().get(TWO_FA_PENDING_PREFIX + tempToken);
         if (pending == null) {
-            throw new IllegalArgumentException("Invalid or expired session, please log in again");
+            throw new AppException(IdentityError.INVALID_SESSION);
         }
 
         // Stored format is "<userId>|<clientIp>". Reject the verify if the
@@ -211,7 +214,7 @@ public class AuthService {
         if (boundIp != null && !boundIp.equals(currentIp)) {
             log.warn("2FA verify denied — tempToken bound to {} but request from {}", boundIp, currentIp);
             redisTemplate.delete(TWO_FA_PENDING_PREFIX + tempToken);
-            throw new IllegalArgumentException("Invalid or expired session, please log in again");
+            throw new AppException(IdentityError.INVALID_SESSION);
         }
 
         rateLimiterService.check("2fa:" + userId, MAX_ATTEMPTS, ATTEMPT_WINDOW);
@@ -219,11 +222,11 @@ public class AuthService {
         String storedCode = redisTemplate.opsForValue().get(TWO_FA_OTP_PREFIX + userId);
         if (storedCode == null || !storedCode.equals(code)) {
             rateLimiterService.penalize("2fa:" + userId, ATTEMPT_WINDOW);
-            throw new IllegalArgumentException("Invalid or expired code");
+            throw new AppException(IdentityError.INVALID_TWO_FACTOR_CODE);
         }
 
         User user = userRepository.findById(Long.parseLong(userId))
-                .orElseThrow(() -> new IllegalStateException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         CustomUserDetails userDetails = CustomUserDetails.from(user);
         UsernamePasswordAuthenticationToken auth =
@@ -246,7 +249,7 @@ public class AuthService {
     public void enable2fa(String currentPassword) {
         User user = getCurrentUser();
         if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new AppException(IdentityError.INVALID_CREDENTIALS, "Current password is incorrect");
         }
         user.setTwoFactorEnabled(true);
         userRepository.save(user);
@@ -256,7 +259,7 @@ public class AuthService {
     public void disable2fa(String currentPassword) {
         User user = getCurrentUser();
         if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new AppException(IdentityError.INVALID_CREDENTIALS, "Current password is incorrect");
         }
         user.setTwoFactorEnabled(false);
         userRepository.save(user);
@@ -288,10 +291,10 @@ public class AuthService {
         String storedCode = redisTemplate.opsForValue().get(key);
         if (storedCode == null || !storedCode.equals(code)) {
             rateLimiterService.penalize("reset:" + email, ATTEMPT_WINDOW);
-            throw new IllegalArgumentException("Invalid or expired reset code");
+            throw new AppException(IdentityError.INVALID_RESET_CODE);
         }
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
         redisTemplate.delete(key);
@@ -312,7 +315,7 @@ public class AuthService {
         String key = VERIFY_PREFIX + token;
         String userId = redisTemplate.opsForValue().get(key);
         if (userId == null) {
-            throw new IllegalArgumentException("Invalid or expired verification token");
+            throw new AppException(IdentityError.INVALID_VERIFICATION_TOKEN);
         }
         User user = userRepository.findById(Long.parseLong(userId))
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));

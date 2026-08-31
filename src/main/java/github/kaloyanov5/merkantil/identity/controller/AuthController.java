@@ -80,12 +80,8 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> enable2fa(@Valid @RequestBody TwoFactorToggleRequest request) {
-        try {
-            authService.enable2fa(request.currentPassword());
-            return ResponseEntity.ok(Map.of("message", "Two-factor authentication enabled"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
-        }
+        authService.enable2fa(request.currentPassword());
+        return ResponseEntity.ok(Map.of("message", "Two-factor authentication enabled"));
     }
 
     @PostMapping("/2fa/disable")
@@ -97,12 +93,8 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> disable2fa(@Valid @RequestBody TwoFactorToggleRequest request) {
-        try {
-            authService.disable2fa(request.currentPassword());
-            return ResponseEntity.ok(Map.of("message", "Two-factor authentication disabled"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
-        }
+        authService.disable2fa(request.currentPassword());
+        return ResponseEntity.ok(Map.of("message", "Two-factor authentication disabled"));
     }
 
     @PostMapping("/logout")
@@ -154,23 +146,18 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "User not authenticated")
     })
     public ResponseEntity<?> getCurrentUser() {
-        try {
-            User user = authService.getCurrentUser();
-            UserResponse response = new UserResponse(
-                    user.getId(),
-                    user.getFirstName(),
-                    user.getLastName(),
-                    user.getEmail(),
-                    user.getBalance(),
-                    user.getCreatedAt(),
-                    user.getEmailVerified(),
-                    user.getTwoFactorEnabled(),
-                    user.getBanned()
-            );
-            return ResponseEntity.ok(response);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        UserResponse response = new UserResponse(
+                user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                user.getBalance(),
+                user.getCreatedAt(),
+                user.getEmailVerified(),
+                user.getTwoFactorEnabled(),
+                user.getBanned()
+        );
+        return ResponseEntity.ok(response);
     }
 }

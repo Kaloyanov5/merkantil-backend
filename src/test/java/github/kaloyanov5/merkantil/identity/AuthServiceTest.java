@@ -8,7 +8,9 @@ import github.kaloyanov5.merkantil.identity.controller.dto.request.RegisterReque
 import github.kaloyanov5.merkantil.identity.controller.dto.response.AuthResponse;
 import github.kaloyanov5.merkantil.identity.model.Role;
 import github.kaloyanov5.merkantil.identity.model.User;
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimitedException;
+import github.kaloyanov5.merkantil.identity.error.IdentityError;
 import github.kaloyanov5.merkantil.identity.exception.TwoFactorRequiredException;
 import github.kaloyanov5.merkantil.identity.service.AuthService;
 import github.kaloyanov5.merkantil.identity.service.LoginSessionService;
@@ -40,6 +42,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -109,9 +112,10 @@ class AuthServiceTest {
 
         when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.register(req, "127.0.0.1"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Email already exists");
+        Throwable thrown = catchThrowable(() -> authService.register(req, "127.0.0.1"));
+        assertThat(thrown).isInstanceOf(AppException.class);
+        assertThat(((AppException) thrown).getErrorCode())
+                .isEqualTo(IdentityError.EMAIL_ALREADY_EXISTS);
 
         verify(userRepository, never()).save(any());
         verify(emailService, never()).sendVerificationEmail(any(), any());
@@ -143,8 +147,10 @@ class AuthServiceTest {
         when(authenticationManager.authenticate(any()))
                 .thenThrow(new BadCredentialsException("Bad credentials"));
 
-        assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse))
-                .isInstanceOf(BadCredentialsException.class);
+        Throwable thrown = catchThrowable(() -> authService.login(req, httpRequest, httpResponse));
+        assertThat(thrown).isInstanceOf(AppException.class);
+        assertThat(((AppException) thrown).getErrorCode())
+                .isEqualTo(IdentityError.INVALID_CREDENTIALS);
 
         // Failed login must be recorded against the rate limiter
         verify(rateLimiterService).penalize(eq("login:user@example.com"), any());
@@ -188,9 +194,11 @@ class AuthServiceTest {
     void verify2fa_invalidToken_throws() {
         when(valueOps.get("2fa:pending:bogus")).thenReturn(null);
 
-        assertThatThrownBy(() -> authService.verify2fa("bogus", "123456", httpRequest, httpResponse))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Invalid or expired");
+        Throwable thrown = catchThrowable(
+                () -> authService.verify2fa("bogus", "123456", httpRequest, httpResponse));
+        assertThat(thrown).isInstanceOf(AppException.class);
+        assertThat(((AppException) thrown).getErrorCode())
+                .isEqualTo(IdentityError.INVALID_SESSION);
     }
 
     @Test
@@ -199,9 +207,11 @@ class AuthServiceTest {
         when(valueOps.get("2fa:pending:tok123")).thenReturn("7");
         when(valueOps.get("2fa:otp:7")).thenReturn("000000"); // correct code
 
-        assertThatThrownBy(() -> authService.verify2fa("tok123", "999999", httpRequest, httpResponse))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Invalid or expired code");
+        Throwable thrown = catchThrowable(
+                () -> authService.verify2fa("tok123", "999999", httpRequest, httpResponse));
+        assertThat(thrown).isInstanceOf(AppException.class);
+        assertThat(((AppException) thrown).getErrorCode()).isEqualTo(IdentityError.INVALID_TWO_FACTOR_CODE);
+        assertThat(thrown).hasMessageContaining("Invalid or expired 2FA code");
 
         verify(rateLimiterService).penalize(eq("2fa:7"), any());
     }
