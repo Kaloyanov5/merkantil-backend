@@ -1,7 +1,9 @@
 package github.kaloyanov5.merkantil.marketdata.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockQuoteResponse;
 import github.kaloyanov5.merkantil.identity.model.User;
+import github.kaloyanov5.merkantil.marketdata.error.MarketDataError;
 import github.kaloyanov5.merkantil.marketdata.model.WatchlistItem;
 import github.kaloyanov5.merkantil.marketdata.repository.StockRepository;
 import github.kaloyanov5.merkantil.marketdata.repository.WatchlistRepository;
@@ -25,10 +27,10 @@ public class WatchlistService {
         String upperSymbol = symbol.toUpperCase();
 
         if (stockRepository.findBySymbol(upperSymbol).isEmpty()) {
-            throw new IllegalArgumentException("Stock not found: " + symbol);
+            throw new AppException(MarketDataError.STOCK_NOT_FOUND, "Stock not found: " + symbol);
         }
         if (watchlistRepository.existsByUserIdAndStockSymbol(user.getId(), upperSymbol)) {
-            throw new IllegalArgumentException(upperSymbol + " is already in your watchlist");
+            throw new AppException(MarketDataError.WATCHLIST_DUPLICATE, upperSymbol + " is already in your watchlist");
         }
 
         WatchlistItem item = new WatchlistItem();
@@ -41,7 +43,7 @@ public class WatchlistService {
     public void removeFromWatchlist(User user, String symbol) {
         String upperSymbol = symbol.toUpperCase();
         if (!watchlistRepository.existsByUserIdAndStockSymbol(user.getId(), upperSymbol)) {
-            throw new IllegalArgumentException(upperSymbol + " is not in your watchlist");
+            throw new AppException(MarketDataError.WATCHLIST_ENTRY_NOT_FOUND, upperSymbol + " is not in your watchlist");
         }
         watchlistRepository.deleteByUserIdAndStockSymbol(user.getId(), upperSymbol);
     }

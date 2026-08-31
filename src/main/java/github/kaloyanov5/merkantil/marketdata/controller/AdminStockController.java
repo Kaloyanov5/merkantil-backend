@@ -1,7 +1,9 @@
 package github.kaloyanov5.merkantil.marketdata.controller;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.request.StockAdminRequest;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.request.StockAdminUpdateRequest;
+import github.kaloyanov5.merkantil.marketdata.error.MarketDataError;
 import github.kaloyanov5.merkantil.marketdata.model.Stock;
 import github.kaloyanov5.merkantil.marketdata.repository.StockRepository;
 import github.kaloyanov5.merkantil.marketdata.service.MassiveWsService;
@@ -81,7 +83,7 @@ public class AdminStockController {
             @Valid @RequestBody StockAdminUpdateRequest request
     ) {
         Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found"));
+                .orElseThrow(() -> new AppException(MarketDataError.STOCK_NOT_FOUND));
 
         if (request.name() != null) stock.setName(request.name());
         if (request.exchange() != null) stock.setExchange(request.exchange());
@@ -115,7 +117,7 @@ public class AdminStockController {
     })
     public ResponseEntity<?> deleteStock(@PathVariable String symbol) {
         Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found"));
+                .orElseThrow(() -> new AppException(MarketDataError.STOCK_NOT_FOUND, "Stock not found: " + symbol));
 
         // Soft delete - just mark as inactive
         stock.setIsActive(false);

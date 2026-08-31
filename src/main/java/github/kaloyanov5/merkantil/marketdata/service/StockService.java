@@ -1,7 +1,9 @@
 package github.kaloyanov5.merkantil.marketdata.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveBar;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveSnapshotTicker;
+import github.kaloyanov5.merkantil.marketdata.error.MarketDataError;
 import github.kaloyanov5.merkantil.marketdata.util.MarketCalendar;
 import github.kaloyanov5.merkantil.common.money.MoneyUtil;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockHistoryResponse;
@@ -68,7 +70,7 @@ public class StockService {
     @Transactional
     public StockResponse getStockBySymbol(String symbol) {
         Stock stock = stockRepository.findBySymbol(symbol.toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + symbol));
+                .orElseThrow(() -> new AppException(MarketDataError.STOCK_NOT_FOUND, "Stock not found: " + symbol));
 
         // Update price from Massive if stale (older than 5 minutes)
         if (stock.getLastUpdated() == null ||
@@ -87,14 +89,14 @@ public class StockService {
         MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(symbol.toUpperCase());
 
         if (snapshot == null) {
-            throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
+            throw new AppException(MarketDataError.QUOTE_UNAVAILABLE, "Unable to fetch quote for: " + symbol);
         }
 
         String marketSession = marketSessionService.getCurrentSession();
 
         BigDecimal currentPrice = resolveRegularPrice(snapshot, marketSession);
         if (currentPrice == null) {
-            throw new IllegalArgumentException("Unable to fetch quote for: " + symbol);
+            throw new AppException(MarketDataError.QUOTE_UNAVAILABLE, "Unable to fetch quote for: " + symbol);
         }
 
         String name = stockRepository.findBySymbol(symbol.toUpperCase())
