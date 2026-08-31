@@ -218,6 +218,40 @@ With the app running, visit:
 
 Use a REST client (Hoppscotch, Postman, Thunder Client) that can persist session cookies to simplify authenticated testing. For admin operations, manually update the `role` column of your user to `ADMIN` or seed via SQL.
 
+## Error codes
+
+Every handled failure returns a stable machine-readable `code` alongside the HTTP status:
+
+```json
+{ "timestamp": "2026-08-31T14:02:11.482", "status": 422, "error": "Insufficient funds to complete this order", "code": "TRAD-3008" }
+```
+
+Clients branch on `code`, never on `error`. The `error` text is prose for humans and may be reworded at any time; `code` and `status` are the contract.
+
+### Code registry
+
+Each service group owns an `ErrorCode` enum in its own `error` package, so a module's vocabulary leaves with it when the module is extracted. Blocks are assigned in request-flow order — a request authenticates, moves through the money core, then reaches the data and derived layers:
+
+| Block | Prefix | Module | Enum |
+|---|---|---|---|
+| 1xxx | `IDNT` | identity | `IdentityError` |
+| 2xxx | `ACCT` | account | `AccountError` |
+| 3xxx | `TRAD` | trading | `TradingError` |
+| 4xxx | `PORT` | portfolio | `PortfolioError` |
+| 5xxx | `MKTD` | marketdata | `MarketDataError` |
+| 6xxx | `NOTF` | notification | *reserved — no codes yet* |
+| 7xxx | `ANLY` | analytics | `AnalyticsError` |
+| 8xxx | — | *unallocated* | |
+| 9xxx | `COMM` | cross-cutting | `CommonError` |
+
+Rules for adding a code:
+
+- Prefixes are exactly four uppercase letters; numbers are sequential within a block and are never reused or renumbered once released.
+- One code per condition a client would plausibly handle differently. If a code would only restate its HTTP status (`RESOURCE_NOT_FOUND` for a 404), it does not earn its place — name the subject and the condition instead, as in `ORDER_NOT_FOUND` or `MARKET_CLOSED`.
+- Name as `<SUBJECT>_<CONDITION>`. Messages are sentence case with no trailing period.
+- `CommonError` holds only conditions about the *caller* rather than a domain object — not authenticated, access denied, account suspended, rate limited. If the subject is a user named in the request rather than the caller, it belongs to the owning module instead.
+- `AppException(code)` uses the enum's default message; `AppException(code, message)` overrides it when the text needs request detail (a symbol, an amount). The code stays the same either way.
+
 ## WebSocket
 
 Connect to `ws://localhost:8080/ws` using STOMP over SockJS and subscribe to `/topic/prices` to receive live price updates:
