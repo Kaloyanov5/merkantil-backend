@@ -34,7 +34,12 @@ public class AnalyticsController {
                     + "(1M, 3M, 6M, 1Y, YTD, ALL).")
     public ResponseEntity<?> getAnalytics(@RequestParam(required = false) String window) {
         AnalyticsWindow resolved;
-        resolved = AnalyticsWindow.fromCode(window != null ? window : analyticsProperties.defaultWindow());
+        try {
+            resolved = AnalyticsWindow.fromCode(window != null ? window : analyticsProperties.defaultWindow());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Invalid window: " + window + ". Allowed: 1M, 3M, 6M, 1Y, YTD, ALL"));
+        }
         User user = authService.getCurrentUser();
         return ResponseEntity.ok(analyticsService.getAnalytics(user.getId(), resolved));
     }
