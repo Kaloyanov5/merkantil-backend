@@ -1,7 +1,9 @@
 package github.kaloyanov5.merkantil.portfolio.service;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.portfolio.controller.dto.response.PortfolioResponse;
+import github.kaloyanov5.merkantil.portfolio.error.PortfolioError;
 import github.kaloyanov5.merkantil.portfolio.model.Portfolio;
 import github.kaloyanov5.merkantil.marketdata.model.Stock;
 import github.kaloyanov5.merkantil.marketdata.service.MassiveApiService;
@@ -75,7 +77,7 @@ public class PortfolioService {
      */
     public PortfolioResponse getPosition(Long userId, String symbol) {
         Portfolio portfolio = portfolioRepository.findByUserIdAndSymbol(userId, symbol.toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("No position found for " + symbol));
+                .orElseThrow(() -> new AppException(PortfolioError.POSITION_NOT_FOUND, "No position found for " + symbol));
 
         return mapToPortfolioResponse(portfolio);
     }
