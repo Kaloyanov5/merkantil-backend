@@ -1,8 +1,9 @@
 package github.kaloyanov5.merkantil.common.error;
 
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimitedException;
-import github.kaloyanov5.merkantil.identity.exception.TwoFactorRequiredException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
+@Order(Ordered.LOWEST_PRECEDENCE)
 @Slf4j
 public class GlobalExceptionHandler {
 
@@ -64,14 +66,6 @@ public class GlobalExceptionHandler {
         log.warn("Optimistic lock conflict: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("error", "Another operation was in progress. Please try again."));
-    }
-
-    @ExceptionHandler(TwoFactorRequiredException.class)
-    public ResponseEntity<Map<String, Object>> handleTwoFactor(TwoFactorRequiredException e) {
-        return ResponseEntity.ok(Map.of(
-                "twoFactorRequired", true,
-                "tempToken", e.getTempToken()
-        ));
     }
 
     @ExceptionHandler(RateLimitedException.class)
