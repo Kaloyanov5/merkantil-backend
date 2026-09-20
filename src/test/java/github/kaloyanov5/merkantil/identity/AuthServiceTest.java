@@ -131,7 +131,7 @@ class AuthServiceTest {
         doThrow(new RateLimitedException(600L))
                 .when(rateLimiterService).check(eq("login:victim@example.com"), anyInt(), any());
 
-        assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse))
+        assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse, "127.0.0.1"))
                 .isInstanceOf(RateLimitedException.class)
                 .extracting("retryAfterSeconds").isEqualTo(600L);
 
@@ -147,7 +147,7 @@ class AuthServiceTest {
         when(authenticationManager.authenticate(any()))
                 .thenThrow(new BadCredentialsException("Bad credentials"));
 
-        Throwable thrown = catchThrowable(() -> authService.login(req, httpRequest, httpResponse));
+        Throwable thrown = catchThrowable(() -> authService.login(req, httpRequest, httpResponse, "127.0.0.1"));
         assertThat(thrown).isInstanceOf(AppException.class);
         assertThat(((AppException) thrown).getErrorCode())
                 .isEqualTo(IdentityError.INVALID_CREDENTIALS);
@@ -178,7 +178,7 @@ class AuthServiceTest {
         when(authenticationManager.authenticate(any())).thenReturn(auth);
         when(userRepository.findById(7L)).thenReturn(Optional.of(user));
 
-        assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse))
+        assertThatThrownBy(() -> authService.login(req, httpRequest, httpResponse, "127.0.0.1"))
                 .isInstanceOf(TwoFactorRequiredException.class)
                 .extracting("tempToken").asString().isNotBlank();
 
