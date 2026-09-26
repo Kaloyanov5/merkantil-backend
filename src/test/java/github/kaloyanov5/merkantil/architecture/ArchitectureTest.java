@@ -13,6 +13,8 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.library.freeze.FreezingArchRule;
 
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
@@ -49,12 +51,17 @@ class ArchitectureTest {
                     if (from == null) {
                         return;
                     }
+                    Set<String> crossings = new TreeSet<>();
                     for (Dependency dependency : javaClass.getDirectDependenciesFromSelf()) {
-                        String to = serviceGroupOf(dependency.getTargetClass());
+                        JavaClass target = dependency.getTargetClass().getBaseComponentType();
+                        String to = serviceGroupOf(target);
                         if (to != null && !to.equals(from)) {
-                            events.add(SimpleConditionEvent.violated(dependency,
-                                    from + " -> " + to + ": " + dependency.getDescription()));
+                            crossings.add("%s -> %s: %s depends on %s"
+                                    .formatted(from, to, javaClass.getName(), target.getName()));
                         }
+                    }
+                    for (String crossing : crossings) {
+                        events.add(SimpleConditionEvent.violated(javaClass, crossing));
                     }
                 }
             };
