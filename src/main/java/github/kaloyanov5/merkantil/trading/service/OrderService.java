@@ -2,7 +2,7 @@ package github.kaloyanov5.merkantil.trading.service;
 
 import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.common.error.CommonError;
-import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
+import github.kaloyanov5.merkantil.common.ratelimit.annotation.RateLimited;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
 import github.kaloyanov5.merkantil.portfolio.model.Portfolio;
 import github.kaloyanov5.merkantil.portfolio.model.Transaction;
@@ -26,7 +26,6 @@ import github.kaloyanov5.merkantil.notification.service.EmailService;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 
 import github.kaloyanov5.merkantil.common.money.MoneyUtil;
 import lombok.RequiredArgsConstructor;
@@ -49,12 +48,11 @@ public class OrderService {
     private final UserRepository userRepository;
     private final MassiveApiService massiveApiService;
     private final EmailService emailService;
-    private final RateLimiterService rateLimiterService;
     private final MarketSessionService marketSessionService;
 
-    /** Maximum order placements allowed per user within {@link #ORDER_RATE_WINDOW}. */
+    /** Maximum order placements allowed per user within {@link #ORDER_RATE_WINDOW_MINUTES}. */
     private static final int MAX_ORDERS_PER_WINDOW = 10;
-    private static final Duration ORDER_RATE_WINDOW = Duration.ofMinutes(1);
+    private static final long ORDER_RATE_WINDOW_MINUTES = 1;
 
     /** Allowed deviation band for LIMIT prices vs the last-known market price (±50%). */
     private static final BigDecimal LIMIT_PRICE_LOWER_BAND = new BigDecimal("0.5");
@@ -64,10 +62,8 @@ public class OrderService {
      * Place a new order (BUY or SELL)
      */
     @Transactional
+    @RateLimited(bucket = "order", key = "#userId", limit = MAX_ORDERS_PER_WINDOW, duration = ORDER_RATE_WINDOW_MINUTES)
     public OrderResponse placeOrder(Long userId, OrderRequest request) {
-        // Throttle order placement per user to block automated bursts
-        rateLimiterService.enforce("order:" + userId, MAX_ORDERS_PER_WINDOW, ORDER_RATE_WINDOW);
-
         // Pessimistic-lock the user row so concurrent orders for the same user
         // serialize on the balance read-modify-write.
         User user = userRepository.findByIdForUpdate(userId)

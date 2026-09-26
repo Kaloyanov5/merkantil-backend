@@ -23,6 +23,7 @@ import org.springframework.security.web.authentication.rememberme.PersistentToke
 import org.springframework.security.web.authentication.rememberme.PersistentTokenRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -38,6 +39,7 @@ import java.util.List;
 @EnableMethodSecurity
 @RequiredArgsConstructor
 @Slf4j
+@EnableTransactionManagement(order = 100)
 public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;

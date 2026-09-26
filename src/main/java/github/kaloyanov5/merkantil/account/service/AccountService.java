@@ -3,11 +3,11 @@ package github.kaloyanov5.merkantil.account.service;
 import github.kaloyanov5.merkantil.account.error.AccountError;
 import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.common.error.CommonError;
-import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
 import github.kaloyanov5.merkantil.account.controller.dto.request.TransferRequest;
 import github.kaloyanov5.merkantil.account.controller.dto.response.BalanceResponse;
 import github.kaloyanov5.merkantil.account.controller.dto.response.WalletTransactionResponse;
 import github.kaloyanov5.merkantil.account.model.PaymentMethod;
+import github.kaloyanov5.merkantil.common.ratelimit.annotation.RateLimited;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.account.model.WalletTransaction;
 import github.kaloyanov5.merkantil.account.model.enums.WalletTransactionType;
@@ -24,7 +24,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.YearMonth;
 
 @Service
@@ -36,11 +35,10 @@ public class AccountService {
     private final WalletTransactionRepository walletTransactionRepository;
     private final PaymentMethodRepository paymentMethodRepository;
     private final EmailService emailService;
-    private final RateLimiterService rateLimiterService;
 
     /** Throttle peer-to-peer transfers per sender. */
     private static final int MAX_TRANSFERS_PER_WINDOW = 10;
-    private static final Duration TRANSFER_RATE_WINDOW = Duration.ofMinutes(1);
+    private static final long TRANSFER_RATE_WINDOW_MINUTES = 1;
     private static final BigDecimal MAX_DEPOSIT = BigDecimal.valueOf(25_000);
     private static final BigDecimal MAX_WITHDRAWAL = BigDecimal.valueOf(10_000);
 
@@ -127,9 +125,8 @@ public class AccountService {
     }
 
     @Transactional
+    @RateLimited(bucket = "transfer", key = "#senderId", limit = MAX_TRANSFERS_PER_WINDOW, duration = TRANSFER_RATE_WINDOW_MINUTES)
     public BalanceResponse transfer(Long senderId, TransferRequest request) {
-        rateLimiterService.enforce("transfer:" + senderId, MAX_TRANSFERS_PER_WINDOW, TRANSFER_RATE_WINDOW);
-
         if (request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new AppException(AccountError.INVALID_AMOUNT, "Transfer amount must be positive");
         }

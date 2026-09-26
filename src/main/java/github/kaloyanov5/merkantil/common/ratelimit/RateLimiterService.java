@@ -14,28 +14,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-/**
- * Centralized rate limiting backed by a Redis counter, with an in-memory
- * fallback that engages automatically whenever Redis is unreachable. A Redis
- * outage therefore degrades rate limiting to per-instance counting instead of
- * failing the request — except for key prefixes listed in
- * {@code ratelimit.fail-closed-prefixes}, which fail closed (deny) when Redis
- * is unreachable. Sensitive flows such as login, 2FA and password reset should
- * be enrolled in fail-closed so a Redis outage cannot relax their brute-force
- * protection.
- *
- * <p>Two usage patterns are supported:
- * <ul>
- *   <li><b>Throughput limiting</b> ({@link #enforce}) — every call counts
- *       toward the limit. Used for order placement.</li>
- *   <li><b>Attempt limiting</b> ({@link #check} / {@link #penalize} /
- *       {@link #clear}) — only failures count, and a success clears the
- *       counter. Used for login, 2FA and password reset.</li>
- * </ul>
- *
- * <p>The in-memory fallback is per-application-instance and not shared across
- * a cluster; this is an accepted limitation for a single-instance deployment.
- */
 @Service
 @Slf4j
 public class RateLimiterService {
@@ -53,7 +31,7 @@ public class RateLimiterService {
 
     public RateLimiterService(
             StringRedisTemplate redisTemplate,
-            @Value("${ratelimit.fail-closed-prefixes:login:,2fa:,password-reset:,lookup-email:}") List<String> failClosedPrefixes
+            @Value("${ratelimit.fail-closed-prefixes:login:,2fa:,reset:,lookup:}") List<String> failClosedPrefixes
     ) {
         this.redisTemplate = redisTemplate;
         this.failClosedPrefixes = failClosedPrefixes.stream()
@@ -67,12 +45,6 @@ public class RateLimiterService {
         log.info("RateLimiter fail-closed prefixes: {}", failClosedPrefixes);
     }
 
-    // ───────────────────────────── Throughput limiting ─────────────────────────────
-
-    /**
-     * Records one hit against {@code key} and throws {@link RateLimitedException}
-     * once the number of hits in the current window exceeds {@code maxHits}.
-     */
     public void enforce(String key, int maxHits, Duration window) {
         long count = increment(key, window);
         if (count > maxHits) {
@@ -80,21 +52,16 @@ public class RateLimiterService {
         }
     }
 
-    // ───────────────────────────── Attempt limiting ────────────────────────────────
-
-    /** Throws {@link RateLimitedException} if {@code key} has already reached {@code maxAttempts}. */
     public void check(String key, int maxAttempts, Duration window) {
         if (currentCount(key, window) >= maxAttempts) {
             throw new RateLimitedException(ttlSeconds(key, window));
         }
     }
 
-    /** Records one failed attempt against {@code key}, starting the window on the first failure. */
     public void penalize(String key, Duration window) {
         increment(key, window);
     }
 
-    /** Clears the counter for {@code key} (e.g. after a successful login). */
     public void clear(String key) {
         String redisKey = PREFIX + key;
         try {
@@ -105,8 +72,6 @@ public class RateLimiterService {
         memoryStore.remove(redisKey);
     }
 
-    // ───────────────────────────── Internal counter ops ────────────────────────────
-
     private boolean isFailClosed(String key) {
         for (String prefix : failClosedPrefixes) {
             if (key.startsWith(prefix)) return true;
@@ -114,7 +79,6 @@ public class RateLimiterService {
         return false;
     }
 
-    /** Increments the counter, sets the window TTL on first hit, and returns the new count. */
     private long increment(String key, Duration window) {
         String redisKey = PREFIX + key;
         try {
@@ -133,7 +97,6 @@ public class RateLimiterService {
         }
     }
 
-    /** Reads the current count without incrementing. */
     private long currentCount(String key, Duration window) {
         String redisKey = PREFIX + key;
         try {
@@ -150,7 +113,6 @@ public class RateLimiterService {
         }
     }
 
-    /** Seconds until the current window expires; used to populate Retry-After. */
     private long ttlSeconds(String key, Duration window) {
         String redisKey = PREFIX + key;
         try {
@@ -180,7 +142,6 @@ public class RateLimiterService {
         return counter.count;
     }
 
-    /** Mutable in-memory counter for the Redis fallback path. */
     private static final class Counter {
         final long windowStart;
         final long windowMillis;

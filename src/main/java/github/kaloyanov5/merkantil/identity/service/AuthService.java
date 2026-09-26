@@ -3,6 +3,7 @@ package github.kaloyanov5.merkantil.identity.service;
 import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.common.ratelimit.RateLimiterService;
+import github.kaloyanov5.merkantil.common.ratelimit.annotation.RateLimited;
 import github.kaloyanov5.merkantil.identity.error.IdentityError;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.identity.exception.TwoFactorRequiredException;
@@ -71,22 +72,18 @@ public class AuthService {
 
     /** Caps on auth-endpoint hits per source IP / per target email. */
     private static final int MAX_LOGIN_PER_IP = 30;
-    private static final Duration LOGIN_IP_WINDOW = Duration.ofMinutes(15);
+    private static final long LOGIN_IP_WINDOW_MINUTES = 15;
     private static final int MAX_REGISTER_PER_IP = 5;
-    private static final Duration REGISTER_WINDOW = Duration.ofHours(1);
+    private static final long REGISTER_WINDOW_MINUTES = 60;
     private static final int MAX_VERIFY_EMAIL_PER_IP = 10;
-    private static final Duration VERIFY_EMAIL_WINDOW = Duration.ofHours(1);
+    private static final long VERIFY_EMAIL_WINDOW_MINUTES = 60;
     private static final int MAX_FORGOT_PER_EMAIL = 3;
     private static final int MAX_FORGOT_PER_IP = 10;
-    private static final Duration FORGOT_WINDOW = Duration.ofHours(1);
+    private static final long FORGOT_WINDOW_MINUTES = 60;
 
     @Transactional
+    @RateLimited(bucket = "register", key = "#clientIp", limit = MAX_REGISTER_PER_IP, duration = REGISTER_WINDOW_MINUTES)
     public AuthResponse register(RegisterRequest request, String clientIp) {
-        // Per-IP throttle to prevent scripted account-farms (each new user
-        // gets a $10k seeded balance, so creation has a real cost).
-        if (clientIp != null) {
-            rateLimiterService.enforce("register:" + clientIp, MAX_REGISTER_PER_IP, REGISTER_WINDOW);
-        }
         if (userRepository.existsByEmail(request.email())) {
             throw new AppException(IdentityError.EMAIL_ALREADY_EXISTS);
         }
@@ -105,15 +102,8 @@ public class AuthService {
         return new AuthResponse("User registered successfully. Please check your email to verify your account.", mapToUserResponse(savedUser));
     }
 
-    public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        // Per-IP throttle in parallel with the email-keyed limiter — blocks
-        // credential-stuffing campaigns that rotate emails on a single IP and
-        // attacker-driven lockout-by-burning-attempts of arbitrary victims.
-        String clientIp = clientIpExtractor.extract(httpRequest);
-        if (clientIp != null) {
-            rateLimiterService.enforce("login-ip:" + clientIp, MAX_LOGIN_PER_IP, LOGIN_IP_WINDOW);
-        }
-
+    @RateLimited(bucket = "login-ip", key = "#clientIp", limit = MAX_LOGIN_PER_IP, duration = LOGIN_IP_WINDOW_MINUTES)
+    public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse, String clientIp) {
         String rateKey = "login:" + request.email().toLowerCase();
         rateLimiterService.check(rateKey, MAX_ATTEMPTS, ATTEMPT_WINDOW);
 
@@ -163,9 +153,7 @@ public class AuthService {
         // Save login session record (IP, device info)
         loginSessionService.saveSession(user.getId(), httpRequest.getSession().getId(), httpRequest);
 
-        // Set remember-me cookie if requested
         if (request.rememberMe()) {
-            // Wrap request to inject the remember-me parameter since we use JSON (not form)
             HttpServletRequestWrapper rememberMeRequest = new HttpServletRequestWrapper(httpRequest) {
                 @Override
                 public String getParameter(String name) {
@@ -265,16 +253,10 @@ public class AuthService {
         userRepository.save(user);
     }
 
+    @RateLimited(bucket = "forgot", key = "#email?.toLowerCase()", limit = MAX_FORGOT_PER_EMAIL, duration = FORGOT_WINDOW_MINUTES)
+    @RateLimited(bucket = "forgot-ip", key = "#clientIp", limit = MAX_FORGOT_PER_IP, duration = FORGOT_WINDOW_MINUTES)
     public void forgotPassword(String email, String clientIp) {
-        // Throttle both per-email (block targeted inbox-bombing of a single
-        // user) and per-IP (block fan-out account-enumeration via timing
-        // signals on the email-send call).
-        rateLimiterService.enforce("forgot:" + email.toLowerCase(), MAX_FORGOT_PER_EMAIL, FORGOT_WINDOW);
-        if (clientIp != null) {
-            rateLimiterService.enforce("forgot-ip:" + clientIp, MAX_FORGOT_PER_IP, FORGOT_WINDOW);
-        }
-
-        // Don't reveal whether the email exists — silently return if not found
+        // silent return if not found
         if (!userRepository.existsByEmail(email)) {
             return;
         }
@@ -300,18 +282,12 @@ public class AuthService {
         redisTemplate.delete(key);
         rateLimiterService.clear("reset:" + email);
 
-        // Kick attackers off any active sessions they may already hold — the
-        // whole point of resetting is to take the account back, but the user
-        // remained logged in on existing devices before this change.
         loginSessionService.revokeAllSessions(user.getId());
     }
 
     @Transactional
+    @RateLimited(bucket = "verify-email", key = "#clientIp", limit = MAX_VERIFY_EMAIL_PER_IP, duration = VERIFY_EMAIL_WINDOW_MINUTES)
     public void verifyEmail(String token, String clientIp) {
-        if (clientIp != null) {
-            // Cap brute-force attempts against the UUID-shaped verification token
-            rateLimiterService.enforce("verify-email:" + clientIp, MAX_VERIFY_EMAIL_PER_IP, VERIFY_EMAIL_WINDOW);
-        }
         String key = VERIFY_PREFIX + token;
         String userId = redisTemplate.opsForValue().get(key);
         if (userId == null) {
