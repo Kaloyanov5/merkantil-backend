@@ -27,15 +27,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<Map<String, Object>> handleAppException(AppException e) {
-        ErrorCode errorCode = e.getErrorCode();
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", LocalDateTime.now());
-        body.put("status", errorCode.getStatus().value());
-        body.put("error", e.getMessage());
-        body.put("code", errorCode.getCode());
-
-        return new ResponseEntity<>(body, errorCode.getStatus());
+        return mapResponseEntity(e.getErrorCode(), e.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -56,9 +48,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", "Access denied"));
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException e) {
+        ErrorCode errorCode = CommonError.ACCESS_DENIED;
+        return mapResponseEntity(errorCode, errorCode.getMessage());
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
@@ -94,5 +86,15 @@ public class GlobalExceptionHandler {
         log.error("Unhandled exception: {}", e.getMessage(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "An unexpected error occurred"));
+    }
+
+    private ResponseEntity<Map<String, Object>> mapResponseEntity(ErrorCode errorCode, String message) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", errorCode.getStatus().value());
+        body.put("error", message);
+        body.put("code", errorCode.getCode());
+
+        return new ResponseEntity<>(body, errorCode.getStatus());
     }
 }

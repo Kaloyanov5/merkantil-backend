@@ -41,12 +41,8 @@ public class AccountController {
             @ApiResponse(responseCode = "401", description = "Not authenticated"),
             @ApiResponse(responseCode = "403", description = "Cannot view another user's balance")
     })
+    @PreAuthorize("#id == principal.id")
     public ResponseEntity<?> getBalance(@PathVariable Long id) {
-        User currentUser = authService.getCurrentUser();
-        if (!id.equals(currentUser.getId())) {
-            return ResponseEntity.status(403)
-                    .body(Map.of("error", "You can only view your own balance"));
-        }
         BalanceResponse balance = accountService.getBalance(id);
         return ResponseEntity.ok(balance);
     }
