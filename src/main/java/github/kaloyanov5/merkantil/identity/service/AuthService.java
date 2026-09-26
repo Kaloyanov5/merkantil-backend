@@ -294,7 +294,7 @@ public class AuthService {
             throw new AppException(IdentityError.INVALID_VERIFICATION_TOKEN);
         }
         User user = userRepository.findById(Long.parseLong(userId))
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         user.setEmailVerified(true);
         userRepository.save(user);
         redisTemplate.delete(key);

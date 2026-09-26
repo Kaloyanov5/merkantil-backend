@@ -1,5 +1,7 @@
 package github.kaloyanov5.merkantil.identity.controller;
 
+import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.identity.controller.dto.response.LoginSessionResponse;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.identity.service.LoginSessionService;
@@ -123,7 +125,7 @@ public class AdminUserController {
     @Operation(summary = "Ban user", description = "Bans a user account and revokes all active sessions. Requires ADMIN role.")
     public ResponseEntity<?> banUser(@PathVariable Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         if (Boolean.TRUE.equals(user.getBanned())) {
             return ResponseEntity.badRequest().body(Map.of("error", "User is already banned"));
         }
@@ -140,7 +142,7 @@ public class AdminUserController {
     @Operation(summary = "Unban user", description = "Restores a banned user account. Requires ADMIN role.")
     public ResponseEntity<?> unbanUser(@PathVariable Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
         if (!Boolean.TRUE.equals(user.getBanned())) {
             return ResponseEntity.badRequest().body(Map.of("error", "User is not banned"));
         }
@@ -172,7 +174,7 @@ public class AdminUserController {
 
     private void ensureUserExists(Long id) {
         if (!userRepository.existsById(id)) {
-            throw new IllegalArgumentException("User not found");
+            throw new AppException(CommonError.USER_NOT_FOUND);
         }
     }
 }

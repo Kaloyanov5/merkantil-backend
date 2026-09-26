@@ -5,6 +5,7 @@ import github.kaloyanov5.merkantil.account.controller.dto.response.PaymentMethod
 import github.kaloyanov5.merkantil.account.error.AccountError;
 import github.kaloyanov5.merkantil.account.model.PaymentMethod;
 import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.account.repository.PaymentMethodRepository;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
@@ -27,7 +28,7 @@ public class PaymentMethodService {
 
     public PaymentMethodResponse addPaymentMethod(Long userId, PaymentMethodRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         long existing = paymentMethodRepository.countByUserIdAndDeletedAtIsNull(userId);
         if (existing >= MAX_PAYMENT_METHODS_PER_USER) {

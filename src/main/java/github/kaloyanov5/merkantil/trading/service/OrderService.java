@@ -208,7 +208,7 @@ public class OrderService {
         }
 
         User user = userRepository.findByIdForUpdate(order.getUser().getId())
-                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
 
         if (order.getType() == Side.BUY) {
             // Funds already reserved — just update portfolio and create transaction
@@ -298,7 +298,7 @@ public class OrderService {
         // Refund reserved funds for BUY orders — lock the user row first
         if (order.getType() == Side.BUY) {
             User user = userRepository.findByIdForUpdate(userId)
-                    .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND, "User not found"));
+                    .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
             BigDecimal refund = MoneyUtil.multiply(order.getLimitPrice(), order.getQuantity());
             user.setBalance(user.getBalance().add(refund));
             userRepository.save(user);
