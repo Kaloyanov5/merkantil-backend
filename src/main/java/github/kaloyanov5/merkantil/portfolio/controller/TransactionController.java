@@ -46,15 +46,10 @@ public class TransactionController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        try {
-            User user = authService.getCurrentUser();
-            Page<TransactionResponse> transactions = transactionService.getUserTransactions(
-                    user.getId(), page, size);
-            return ResponseEntity.ok(transactions);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        Page<TransactionResponse> transactions = transactionService.getUserTransactions(
+                user.getId(), page, size);
+        return ResponseEntity.ok(transactions);
     }
 
     /**
@@ -80,9 +75,6 @@ public class TransactionController {
             return ResponseEntity.ok(transactions);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid type: " + type));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
         }
     }
 
@@ -97,15 +89,10 @@ public class TransactionController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> getTransactionsBySymbol(@PathVariable String symbol) {
-        try {
-            User user = authService.getCurrentUser();
-            List<TransactionResponse> transactions = transactionService.getUserTransactionsBySymbol(
-                    user.getId(), symbol);
-            return ResponseEntity.ok(transactions);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        List<TransactionResponse> transactions = transactionService.getUserTransactionsBySymbol(
+                user.getId(), symbol);
+        return ResponseEntity.ok(transactions);
     }
 
     /**
@@ -123,15 +110,10 @@ public class TransactionController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end
     ) {
-        try {
-            User user = authService.getCurrentUser();
-            List<TransactionResponse> transactions = transactionService.getUserTransactionsByDateRange(
-                    user.getId(), start, end);
-            return ResponseEntity.ok(transactions);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        List<TransactionResponse> transactions = transactionService.getUserTransactionsByDateRange(
+                user.getId(), start, end);
+        return ResponseEntity.ok(transactions);
     }
 
     /**
@@ -145,13 +127,8 @@ public class TransactionController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> getTransactionStats() {
-        try {
-            User user = authService.getCurrentUser();
-            TransactionService.TransactionStats stats = transactionService.getTransactionStats(user.getId());
-            return ResponseEntity.ok(stats);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        TransactionService.TransactionStats stats = transactionService.getTransactionStats(user.getId());
+        return ResponseEntity.ok(stats);
     }
 }

@@ -32,14 +32,9 @@ public class WatchlistController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> getWatchlist() {
-        try {
-            User user = authService.getCurrentUser();
-            List<StockQuoteResponse> watchlist = watchlistService.getWatchlist(user);
-            return ResponseEntity.ok(watchlist);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        List<StockQuoteResponse> watchlist = watchlistService.getWatchlist(user);
+        return ResponseEntity.ok(watchlist);
     }
 
     @PostMapping("/{symbol}")
@@ -50,14 +45,9 @@ public class WatchlistController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> addToWatchlist(@PathVariable String symbol) {
-        try {
-            User user = authService.getCurrentUser();
-            watchlistService.addToWatchlist(user, symbol);
-            return ResponseEntity.ok(Map.of("message", symbol.toUpperCase() + " added to watchlist"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        watchlistService.addToWatchlist(user, symbol);
+        return ResponseEntity.ok(Map.of("message", symbol.toUpperCase() + " added to watchlist"));
     }
 
     @DeleteMapping("/{symbol}")
@@ -68,13 +58,8 @@ public class WatchlistController {
             @ApiResponse(responseCode = "401", description = "Not authenticated")
     })
     public ResponseEntity<?> removeFromWatchlist(@PathVariable String symbol) {
-        try {
-            User user = authService.getCurrentUser();
-            watchlistService.removeFromWatchlist(user, symbol);
-            return ResponseEntity.ok(Map.of("message", symbol.toUpperCase() + " removed from watchlist"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "User not authenticated"));
-        }
+        User user = authService.getCurrentUser();
+        watchlistService.removeFromWatchlist(user, symbol);
+        return ResponseEntity.ok(Map.of("message", symbol.toUpperCase() + " removed from watchlist"));
     }
 }
