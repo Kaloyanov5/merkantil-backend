@@ -2,14 +2,18 @@ package github.kaloyanov5.merkantil.marketdata.service;
 
 import github.kaloyanov5.merkantil.common.logging.LogSanitizer;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.*;
+import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -31,9 +35,14 @@ public class MassiveApiService {
             @Value("${massive.api.base-url}") String baseUrl,
             @Value("${massive.api.timeout}") int timeout
     ) {
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2_000)
+                .responseTimeout(Duration.ofMillis(timeout));
+
         this.baseUri = URI.create(baseUrl);
         this.client = WebClient.builder()
                 .baseUrl(baseUrl)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .codecs(configurer -> configurer
                         .defaultCodecs()
