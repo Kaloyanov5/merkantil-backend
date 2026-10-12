@@ -7,9 +7,9 @@ import github.kaloyanov5.merkantil.marketdata.error.MarketDataError;
 import github.kaloyanov5.merkantil.marketdata.model.WatchlistItem;
 import github.kaloyanov5.merkantil.marketdata.repository.StockRepository;
 import github.kaloyanov5.merkantil.marketdata.repository.WatchlistRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;

@@ -8,7 +8,7 @@ import github.kaloyanov5.merkantil.identity.controller.dto.response.UserResponse
 import github.kaloyanov5.merkantil.identity.error.IdentityError;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 
