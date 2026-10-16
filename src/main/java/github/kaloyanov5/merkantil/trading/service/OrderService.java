@@ -4,6 +4,7 @@ import github.kaloyanov5.merkantil.common.error.AppException;
 import github.kaloyanov5.merkantil.common.error.CommonError;
 import github.kaloyanov5.merkantil.common.ratelimit.annotation.RateLimited;
 import github.kaloyanov5.merkantil.identity.repository.UserRepository;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.portfolio.model.Portfolio;
 import github.kaloyanov5.merkantil.portfolio.model.Transaction;
 import github.kaloyanov5.merkantil.trading.error.TradingError;
@@ -35,6 +36,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +51,7 @@ public class OrderService {
     private final MassiveApiService massiveApiService;
     private final EmailService emailService;
     private final MarketSessionService marketSessionService;
+    private final TransactionTemplate transactionTemplate;
 
     /** Maximum order placements allowed per user within {@link #ORDER_RATE_WINDOW_MINUTES}. */
     private static final int MAX_ORDERS_PER_WINDOW = 10;
@@ -61,17 +64,10 @@ public class OrderService {
     /**
      * Place a new order (BUY or SELL)
      */
-    @Transactional
     @RateLimited(bucket = "order", key = "#userId", limit = MAX_ORDERS_PER_WINDOW, duration = ORDER_RATE_WINDOW_MINUTES)
     public OrderResponse placeOrder(Long userId, OrderRequest request) {
-        // Pessimistic-lock the user row so concurrent orders for the same user
-        // serialize on the balance read-modify-write.
-        User user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
-
-        if (Boolean.TRUE.equals(user.getBanned())) {
-            throw new AppException(CommonError.ACCOUNT_SUSPENDED);
-        }
+        OrderType orderType = OrderType.valueOf(request.orderType().toUpperCase());
+        Side side = Side.valueOf(request.side().toUpperCase());
 
         Stock stock = stockRepository.findBySymbol(request.symbol().toUpperCase())
                 .orElseThrow(() -> new AppException(TradingError.STOCK_NOT_FOUND, "Stock not found: " + request.symbol()));
@@ -80,54 +76,64 @@ public class OrderService {
             throw new AppException(TradingError.STOCK_NOT_TRADEABLE);
         }
 
-        OrderType orderType = OrderType.valueOf(request.orderType().toUpperCase());
-        Side side = Side.valueOf(request.side().toUpperCase());
-
-        if (orderType == OrderType.LIMIT) {
-            if (request.limitPrice() == null || request.limitPrice().signum() <= 0) {
-                throw new AppException(TradingError.LIMIT_PRICE_REQUIRED);
+        BigDecimal price = null;
+        if (OrderType.MARKET.equals(orderType)) {
+            MarketSession session = marketSessionService.getCurrentSession();
+            if (!MarketSession.OPEN.equals(session)) {
+                throw new AppException(TradingError.MARKET_CLOSED,
+                        "The market is currently " + describeSession(session) + ". Market orders can only be "
+                                + "placed during regular trading hours (9:30 AM - 4:00 PM ET). Place a limit order instead.");
             }
-            // Reject limit prices wildly out of line with the last-known market
-            // price (defaults to ±50% band). This stops grief-fills like a SELL
-            // at $0.0001 firing instantly on the next tick or absurd-notional
-            // BUYs that would overflow DECIMAL(19,4) mid-transaction.
-            BigDecimal reference = stock.getCurrentPrice();
-            if (MoneyUtil.isPositive(reference)) {
-                BigDecimal lower = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_LOWER_BAND));
-                BigDecimal upper = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_UPPER_BAND));
-                if (request.limitPrice().compareTo(lower) < 0 || request.limitPrice().compareTo(upper) > 0) {
-                    throw new AppException(TradingError.LIMIT_PRICE_OUT_OF_RANGE, String.format(
-                            "Limit price $%s is outside the allowed range ($%s – $%s) for %s based on the last market price",
-                            request.limitPrice(), lower, upper, stock.getSymbol()));
+            price = getMarketPrice(stock);
+        }
+        BigDecimal executionPrice = price;
+
+        return transactionTemplate.execute(status -> {
+            // Pessimistic-lock the user row so concurrent orders for the same user
+            // serialize on the balance read-modify-write.
+            User user = userRepository.findByIdForUpdate(userId)
+                    .orElseThrow(() -> new AppException(CommonError.USER_NOT_FOUND));
+
+            if (Boolean.TRUE.equals(user.getBanned())) {
+                throw new AppException(CommonError.ACCOUNT_SUSPENDED);
+            }
+
+            if (OrderType.LIMIT.equals(orderType)) {
+                if (request.limitPrice() == null || request.limitPrice().signum() <= 0) {
+                    throw new AppException(TradingError.LIMIT_PRICE_REQUIRED);
                 }
+                // Reject limit prices wildly out of line with the last-known market
+                // price (defaults to ±50% band). This stops grief-fills like a SELL
+                // at $0.0001 firing instantly on the next tick or absurd-notional
+                // BUYs that would overflow DECIMAL(19,4) mid-transaction.
+                BigDecimal reference = stock.getCurrentPrice();
+                if (MoneyUtil.isPositive(reference)) {
+                    BigDecimal lower = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_LOWER_BAND));
+                    BigDecimal upper = MoneyUtil.scaled(reference.multiply(LIMIT_PRICE_UPPER_BAND));
+                    if (request.limitPrice().compareTo(lower) < 0 || request.limitPrice().compareTo(upper) > 0) {
+                        throw new AppException(TradingError.LIMIT_PRICE_OUT_OF_RANGE, String.format(
+                                "Limit price $%s is outside the allowed range ($%s – $%s) for %s based on the last market price",
+                                request.limitPrice(), lower, upper, stock.getSymbol()));
+                    }
+                }
+
+                return Side.BUY.equals(side)
+                        ? placeLimitBuyOrder(user, stock, request)
+                        : placeLimitSellOrder(user, stock, request);
             }
-            return side == Side.BUY
-                    ? placeLimitBuyOrder(user, stock, request)
-                    : placeLimitSellOrder(user, stock, request);
-        }
 
-        // MARKET orders execute immediately, so they are only valid during
-        // regular trading hours. LIMIT orders are exempt — they are placed in
-        // any session and queue until their price condition is met.
-        String session = marketSessionService.getCurrentSession();
-        if (!"OPEN".equals(session)) {
-            throw new AppException(TradingError.MARKET_CLOSED,
-                    "The market is currently " + describeSession(session) + ". Market orders can only be "
-                            + "placed during regular trading hours (9:30 AM - 4:00 PM ET). Place a limit order instead.");
-        }
-
-        BigDecimal executionPrice = getMarketPrice(stock);
-        return side == Side.BUY
-                ? executeBuyOrder(user, stock, request, executionPrice)
-                : executeSellOrder(user, stock, request, executionPrice);
+            return Side.BUY.equals(side)
+                    ? executeBuyOrder(user, stock, request, executionPrice)
+                    : executeSellOrder(user, stock, request, executionPrice);
+        });
     }
 
     /** Human-readable description of a non-OPEN market session for error messages. */
-    private String describeSession(String session) {
+    private String describeSession(MarketSession session) {
         return switch (session) {
-            case "PRE_MARKET" -> "in pre-market";
-            case "AFTER_HOURS" -> "in after-hours";
-            case "HOLIDAY" -> "closed for a holiday";
+            case PRE_MARKET -> "in pre-market";
+            case AFTER_HOURS -> "in after-hours";
+            case HOLIDAY -> "closed for a holiday";
             default -> "closed";
         };
     }
@@ -204,6 +210,11 @@ public class OrderService {
 
         if (order.getStatus() != OrderStatus.OPEN) {
             log.debug("Skipping limit order {} — status is {}", orderId, order.getStatus());
+            return;
+        }
+
+        if (executionPrice == null || !order.isFillableAt(executionPrice)) {
+            log.warn("Limit order {} not fillable at {} (limit {})", orderId, executionPrice, order.getLimitPrice());
             return;
         }
 

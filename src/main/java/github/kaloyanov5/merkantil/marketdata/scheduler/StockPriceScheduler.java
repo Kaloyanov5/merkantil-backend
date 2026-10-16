@@ -2,8 +2,8 @@ package github.kaloyanov5.merkantil.marketdata.scheduler;
 
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveBar;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveSnapshotTicker;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.trading.model.Order;
-import github.kaloyanov5.merkantil.trading.model.enums.Side;
 import github.kaloyanov5.merkantil.marketdata.model.Stock;
 import github.kaloyanov5.merkantil.marketdata.model.StockPriceHistory;
 import github.kaloyanov5.merkantil.marketdata.service.MarketSessionService;
@@ -84,10 +84,10 @@ public class StockPriceScheduler {
         }
 
         try {
-            String marketSession = marketSessionService.getCurrentSession();
+            MarketSession marketSession = marketSessionService.getCurrentSession();
             log.info("Starting scheduled stock price update (session: {})...", marketSession);
 
-            if ("CLOSED".equals(marketSession) || "HOLIDAY".equals(marketSession)) {
+            if (MarketSession.NON_TRADABLE.contains(marketSession)) {
                 log.debug("Market is {}. Skipping price update.", marketSession);
                 return;
             }
@@ -175,7 +175,7 @@ public class StockPriceScheduler {
                     history.setHigh(MoneyUtil.of(bar.high()));
                     history.setLow(MoneyUtil.of(bar.low()));
                     history.setClose(MoneyUtil.of(bar.close()));
-                    history.setVolume(bar.volume() != null ? bar.volume().longValue() : null);
+                    history.setVolume(bar.volume());
                     history.setCreatedAt(LocalDateTime.now());
 
                     stockPriceHistoryRepository.save(history);
@@ -319,7 +319,7 @@ public class StockPriceScheduler {
                 history.setHigh(MoneyUtil.of(bar.high()));
                 history.setLow(MoneyUtil.of(bar.low()));
                 history.setClose(MoneyUtil.of(bar.close()));
-                history.setVolume(bar.volume() != null ? bar.volume().longValue() : null);
+                history.setVolume(bar.volume());
                 history.setCreatedAt(LocalDateTime.now());
 
                 stockPriceHistoryRepository.save(history);
@@ -374,7 +374,7 @@ public class StockPriceScheduler {
      * Update a batch of stocks using multiple snapshots (efficient batch API call)
      * Updates both the database AND evicts Redis cache
      */
-    private void updateStockBatch(List<Stock> stocks, String marketSession) {
+    private void updateStockBatch(List<Stock> stocks, MarketSession marketSession) {
         try {
             List<String> symbols = stocks.stream()
                     .map(Stock::getSymbol)
@@ -438,11 +438,7 @@ public class StockPriceScheduler {
                 BigDecimal currentPrice = priceMap.get(order.getSymbol());
                 if (currentPrice == null || order.getLimitPrice() == null) continue;
 
-                boolean conditionMet = order.getType() == Side.BUY
-                        ? currentPrice.compareTo(order.getLimitPrice()) <= 0
-                        : currentPrice.compareTo(order.getLimitPrice()) >= 0;
-
-                if (conditionMet) {
+                if (order.isFillableAt(currentPrice)) {
                     orderService.executeLimitOrder(order.getId(), currentPrice);
                 }
             } catch (Exception e) {
@@ -460,8 +456,8 @@ public class StockPriceScheduler {
      *              "official" price alongside the extended-hours price.
      */
     private void updateStockFromSnapshot(Stock stock, MassiveSnapshotTicker snapshot,
-                                         String marketSession) {
-        if ("OPEN".equals(marketSession)) {
+                                         MarketSession marketSession) {
+        if (MarketSession.OPEN.equals(marketSession)) {
             // Live regular-hours price — priority: lastTrade > min.close > fmv > day.close
             if (snapshot.lastTrade() != null && snapshot.lastTrade().price() != null
                     && snapshot.lastTrade().price() > 0) {
@@ -541,7 +537,7 @@ public class StockPriceScheduler {
     public void updatePricesNow() {
         log.info("Manual price update triggered");
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
 
         List<Stock> allStocks = stockRepository.findAll().stream()
                 .filter(s -> s.getIsActive() != null && s.getIsActive())

@@ -6,9 +6,7 @@ import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveSnap
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockQuoteResponse;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockResponse;
 import github.kaloyanov5.merkantil.marketdata.model.Stock;
-import github.kaloyanov5.merkantil.marketdata.service.MarketSessionService;
-import github.kaloyanov5.merkantil.marketdata.service.MassiveApiService;
-import github.kaloyanov5.merkantil.marketdata.service.StockService;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.marketdata.repository.StockPriceHistoryRepository;
 import github.kaloyanov5.merkantil.marketdata.repository.StockRepository;
 import github.kaloyanov5.merkantil.marketdata.util.MarketCalendar;
@@ -44,32 +42,32 @@ class StockServiceTest {
 
     @Test
     void status_isNull_whenMarketOpen() {
-        assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("10.00"), "OPEN")).isNull();
+        assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("10.00"), MarketSession.OPEN)).isNull();
     }
 
     @Test
     void status_isNull_whenClosed() {
-        assertThat(StockService.resolveExtendedHoursStatus(null, "CLOSED")).isNull();
+        assertThat(StockService.resolveExtendedHoursStatus(null, MarketSession.CLOSED)).isNull();
     }
 
     @Test
     void status_isNoTrades_whenPreMarketAndNoPrice() {
-        assertThat(StockService.resolveExtendedHoursStatus(null, "PRE_MARKET")).isEqualTo("NO_TRADES");
+        assertThat(StockService.resolveExtendedHoursStatus(null, MarketSession.PRE_MARKET)).isEqualTo("NO_TRADES");
     }
 
     @Test
     void status_isTrading_whenPreMarketAndPricePresent() {
-        assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("12.34"), "PRE_MARKET")).isEqualTo("TRADING");
+        assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("12.34"), MarketSession.PRE_MARKET)).isEqualTo("TRADING");
     }
 
     @Test
     void status_isNoTrades_whenAfterHoursAndNoPrice() {
-        assertThat(StockService.resolveExtendedHoursStatus(null, "AFTER_HOURS")).isEqualTo("NO_TRADES");
+        assertThat(StockService.resolveExtendedHoursStatus(null, MarketSession.AFTER_HOURS)).isEqualTo("NO_TRADES");
     }
 
     @Test
     void status_isTrading_whenAfterHoursAndPricePresent() {
-        assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("12.34"), "AFTER_HOURS")).isEqualTo("TRADING");
+        assertThat(StockService.resolveExtendedHoursStatus(new BigDecimal("12.34"), MarketSession.AFTER_HOURS)).isEqualTo("TRADING");
     }
 
     private MassiveBar barWithClose(double close) {
@@ -84,7 +82,7 @@ class StockServiceTest {
         MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
                 "DE", null, barWithClose(400.00), null, null, null, null, null, null, null);
         when(massiveApiService.getSnapshot("DE")).thenReturn(snapshot);
-        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.PRE_MARKET);
         when(stockRepository.findBySymbol("DE")).thenReturn(Optional.empty());
 
         StockQuoteResponse quote = stockService.getQuote("DE");
@@ -99,7 +97,7 @@ class StockServiceTest {
         MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
                 "AAPL", null, barWithClose(150.00), null, lastTrade, null, null, null, null, null);
         when(massiveApiService.getSnapshot("AAPL")).thenReturn(snapshot);
-        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.PRE_MARKET);
         when(stockRepository.findBySymbol("AAPL")).thenReturn(Optional.empty());
 
         StockQuoteResponse quote = stockService.getQuote("AAPL");
@@ -114,7 +112,7 @@ class StockServiceTest {
         MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
                 "AAPL", barWithClose(150.00), barWithClose(149.00), null, lastTrade, null, null, null, null, null);
         when(massiveApiService.getSnapshot("AAPL")).thenReturn(snapshot);
-        when(marketSessionService.getCurrentSession()).thenReturn("OPEN");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.OPEN);
         when(stockRepository.findBySymbol("AAPL")).thenReturn(Optional.empty());
 
         StockQuoteResponse quote = stockService.getQuote("AAPL");
@@ -133,7 +131,7 @@ class StockServiceTest {
         stock.setExtendedHoursPrice(null);
         stock.setLastUpdated(LocalDateTime.now()); // fresh -> skips Massive refresh
         when(stockRepository.findBySymbol("DE")).thenReturn(Optional.of(stock));
-        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.PRE_MARKET);
 
         StockResponse response = stockService.getStockBySymbol("DE");
 
@@ -150,7 +148,7 @@ class StockServiceTest {
         stock.setExtendedHoursPrice(null);
         stock.setLastUpdated(LocalDateTime.now());
         when(stockRepository.findBySymbol("DE")).thenReturn(Optional.of(stock));
-        when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.CLOSED);
 
         StockResponse response = stockService.getStockBySymbol("DE");
 
@@ -169,7 +167,7 @@ class StockServiceTest {
         MassiveSnapshotTicker snapshot = new MassiveSnapshotTicker(
                 "DE", barWithClose(400.00), barWithClose(398.00), null, null, null, null, null, null, null);
         when(massiveApiService.getSnapshot("DE")).thenReturn(snapshot);
-        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.PRE_MARKET);
 
         stockService.updateStockPriceFromMassive(stock);
 

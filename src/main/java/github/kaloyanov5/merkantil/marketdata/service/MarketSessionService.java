@@ -1,5 +1,6 @@
 package github.kaloyanov5.merkantil.marketdata.service;
 
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.marketdata.util.MarketCalendar;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,15 +33,15 @@ public class MarketSessionService {
      * market status cannot be determined, so callers fail safe.
      */
     @Cacheable("marketStatus")
-    public String getCurrentSession() {
+    public MarketSession getCurrentSession() {
         try {
             if (marketCalendar.isHoliday(LocalDate.now(ZoneId.of("America/New_York")))) {
-                return "HOLIDAY";
+                return MarketSession.HOLIDAY;
             }
-            return massiveApiService.getDetailedMarketStatus().getOrDefault("status", "CLOSED");
+            return massiveApiService.getDetailedMarketStatus().status();
         } catch (Exception e) {
             log.warn("Could not determine market session, defaulting to CLOSED: {}", e.getMessage());
-            return "CLOSED";
+            return MarketSession.CLOSED;
         }
     }
 }

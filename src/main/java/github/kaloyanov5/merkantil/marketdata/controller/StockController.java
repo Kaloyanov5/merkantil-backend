@@ -1,5 +1,6 @@
 package github.kaloyanov5.merkantil.marketdata.controller;
 
+import github.kaloyanov5.merkantil.marketdata.controller.dto.response.MarketStatusResponse;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.NewsArticleResponse;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockHistoryResponse;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockQuoteResponse;
@@ -66,8 +67,8 @@ public class StockController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Market status returned successfully")
     })
-    public ResponseEntity<Map<String, String>> getMarketStatus() {
-        Map<String, String> status = stockService.getMarketStatus();
+    public ResponseEntity<MarketStatusResponse> getMarketStatus() {
+        MarketStatusResponse status = stockService.getMarketStatus();
         return ResponseEntity.ok(status);
     }
 

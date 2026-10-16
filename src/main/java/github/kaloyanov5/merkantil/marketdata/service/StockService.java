@@ -1,9 +1,11 @@
 package github.kaloyanov5.merkantil.marketdata.service;
 
 import github.kaloyanov5.merkantil.common.error.AppException;
+import github.kaloyanov5.merkantil.marketdata.controller.dto.response.MarketStatusResponse;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveBar;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.MassiveSnapshotTicker;
 import github.kaloyanov5.merkantil.marketdata.error.MarketDataError;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.marketdata.util.MarketCalendar;
 import github.kaloyanov5.merkantil.common.money.MoneyUtil;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.response.StockHistoryResponse;
@@ -57,7 +59,7 @@ public class StockService {
 
         Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(sortDirection, sortBy));
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findByIsActiveTrue(pageable)
                 .map(s -> mapToStockResponse(s, marketSession));
     }
@@ -78,7 +80,7 @@ public class StockService {
             updateStockPriceFromMassive(stock);
         }
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return mapToStockResponse(stock, marketSession);
     }
 
@@ -92,7 +94,7 @@ public class StockService {
             throw new AppException(MarketDataError.QUOTE_UNAVAILABLE, "Unable to fetch quote for: " + symbol);
         }
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
 
         BigDecimal currentPrice = resolveRegularPrice(snapshot, marketSession);
         if (currentPrice == null) {
@@ -112,7 +114,7 @@ public class StockService {
     public Page<StockResponse> searchStocks(String query, int page, int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 100));
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findBySymbolContainingIgnoreCaseOrNameContainingIgnoreCase(
                         query, query, pageable)
                 .map(s -> mapToStockResponse(s, marketSession));
@@ -124,7 +126,7 @@ public class StockService {
     public Page<StockResponse> getStocksBySector(String sector, int page, int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "marketCap"));
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findBySector(sector, pageable)
                 .map(s -> mapToStockResponse(s, marketSession));
     }
@@ -141,7 +143,7 @@ public class StockService {
      */
     public List<StockResponse> getTopGainers(int limit) {
         Pageable pageable = PageRequest.of(0, limit);
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findTopGainers(pageable).stream()
                 .map(s -> mapToStockResponse(s, marketSession))
                 .collect(Collectors.toList());
@@ -152,7 +154,7 @@ public class StockService {
      */
     public List<StockResponse> getTopLosers(int limit) {
         Pageable pageable = PageRequest.of(0, limit);
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findTopLosers(pageable).stream()
                 .map(s -> mapToStockResponse(s, marketSession))
                 .collect(Collectors.toList());
@@ -163,7 +165,7 @@ public class StockService {
      */
     public List<StockResponse> getMostActive(int limit) {
         Pageable pageable = PageRequest.of(0, limit);
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
         return stockRepository.findTopByVolume(pageable).stream()
                 .map(s -> mapToStockResponse(s, marketSession))
                 .collect(Collectors.toList());
@@ -327,7 +329,7 @@ public class StockService {
         Map<String, MassiveSnapshotTicker> snapshots = massiveApiService.getMultipleSnapshots(
                 symbols.stream().map(String::toUpperCase).collect(Collectors.toList()));
 
-        String marketSession = marketSessionService.getCurrentSession();
+        MarketSession marketSession = marketSessionService.getCurrentSession();
 
         return snapshots.entrySet().stream()
                 .map(entry -> convertSnapshotToQuote(entry.getKey(), entry.getValue(), marketSession))
@@ -338,14 +340,13 @@ public class StockService {
     /**
      * Get detailed market status (OPEN, PRE_MARKET, AFTER_HOURS, CLOSED, HOLIDAY)
      */
-    public Map<String, String> getMarketStatus() {
-        Map<String, String> status = massiveApiService.getDetailedMarketStatus();
-        if ("CLOSED".equals(status.get("status")) && marketCalendar.isHoliday(LocalDate.now(ZoneId.of("America/New_York")))) {
-            Map<String, String> result = new java.util.HashMap<>(status);
-            result.put("status", "HOLIDAY");
-            return result;
+    public MarketStatusResponse getMarketStatus() {
+        MarketStatusResponse response = massiveApiService.getDetailedMarketStatus();
+        if (MarketSession.CLOSED.equals(response.status())
+                && marketCalendar.isHoliday(LocalDate.now(ZoneId.of("America/New_York")))) {
+            return new MarketStatusResponse(MarketSession.HOLIDAY, response.serverTime());
         }
-        return status;
+        return response;
     }
 
     /**
@@ -358,9 +359,9 @@ public class StockService {
             MassiveSnapshotTicker snapshot = massiveApiService.getSnapshot(stock.getSymbol());
             if (snapshot == null) return;
 
-            String marketSession = marketSessionService.getCurrentSession();
+            MarketSession marketSession = marketSessionService.getCurrentSession();
 
-            if ("OPEN".equals(marketSession)) {
+            if (MarketSession.OPEN.equals(marketSession)) {
                 BigDecimal price = resolveRegularPrice(snapshot, marketSession);
                 if (price != null) stock.setCurrentPrice(price);
                 stock.setExtendedHoursPrice(null);
@@ -372,7 +373,7 @@ public class StockService {
                     if (snapshot.day().volume() != null && snapshot.day().volume() > 0)
                         stock.setVolume(snapshot.day().volume().longValue());
                 }
-            } else if ("PRE_MARKET".equals(marketSession) || "AFTER_HOURS".equals(marketSession)) {
+            } else if (MarketSession.EXTENDED_HOURS.contains(marketSession)) {
                 BigDecimal extPrice = resolveExtendedHoursPrice(snapshot, marketSession);
                 stock.setExtendedHoursPrice(extPrice);
                 // Sync currentPrice with official regular-session close
@@ -399,7 +400,7 @@ public class StockService {
     }
 
     private StockQuoteResponse convertSnapshotToQuote(String symbol, MassiveSnapshotTicker snapshot,
-                                                       String marketSession) {
+                                                       MarketSession marketSession) {
         if (snapshot == null) return null;
 
         BigDecimal currentPrice = resolveRegularPrice(snapshot, marketSession);
@@ -414,8 +415,8 @@ public class StockService {
      * During OPEN: min.close / lastTrade is the live price.
      * During PRE_MARKET / AFTER_HOURS / CLOSED: prevDay.close is the official regular-session price.
      */
-    private BigDecimal resolveRegularPrice(MassiveSnapshotTicker snapshot, String marketSession) {
-        if ("OPEN".equals(marketSession)) {
+    private BigDecimal resolveRegularPrice(MassiveSnapshotTicker snapshot, MarketSession marketSession) {
+        if (MarketSession.OPEN.equals(marketSession)) {
             // Live intraday price
             if (snapshot.lastTrade() != null && snapshot.lastTrade().price() != null
                     && snapshot.lastTrade().price() > 0) {
@@ -451,8 +452,8 @@ public class StockService {
      * Resolves the extended-hours price (pre-market or after-hours).
      * Only meaningful when marketSession is PRE_MARKET or AFTER_HOURS.
      */
-    private BigDecimal resolveExtendedHoursPrice(MassiveSnapshotTicker snapshot, String marketSession) {
-        if (!"PRE_MARKET".equals(marketSession) && !"AFTER_HOURS".equals(marketSession)) {
+    private BigDecimal resolveExtendedHoursPrice(MassiveSnapshotTicker snapshot, MarketSession marketSession) {
+        if (!MarketSession.EXTENDED_HOURS.contains(marketSession)) {
             return null;
         }
         if (snapshot.lastTrade() != null && snapshot.lastTrade().price() != null
@@ -476,8 +477,8 @@ public class StockService {
      * yet caught up, or the ticker genuinely has no extended-hours trades);
      * {@code "TRADING"} otherwise.
      */
-    static String resolveExtendedHoursStatus(BigDecimal extendedHoursPrice, String marketSession) {
-        if (!"PRE_MARKET".equals(marketSession) && !"AFTER_HOURS".equals(marketSession)) {
+    static String resolveExtendedHoursStatus(BigDecimal extendedHoursPrice, MarketSession marketSession) {
+        if (!MarketSession.EXTENDED_HOURS.contains(marketSession)) {
             return null;
         }
         return extendedHoursPrice == null ? "NO_TRADES" : "TRADING";
@@ -485,7 +486,7 @@ public class StockService {
 
     private StockQuoteResponse buildQuoteResponse(String symbol, String name,
                                                    BigDecimal currentPrice, MassiveSnapshotTicker snapshot,
-                                                   String marketSession) {
+                                                   MarketSession marketSession) {
         BigDecimal previousClose = snapshot.prevDay() != null
                 ? MoneyUtil.of(snapshot.prevDay().close()) : null;
 
@@ -529,7 +530,7 @@ public class StockService {
                 .doubleValue();
     }
 
-    private StockResponse mapToStockResponse(Stock stock, String marketSession) {
+    private StockResponse mapToStockResponse(Stock stock, MarketSession marketSession) {
         BigDecimal changeAmount = null;
         Double changePercent = null;
 

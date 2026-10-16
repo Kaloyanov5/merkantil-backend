@@ -74,10 +74,8 @@ MARKETDATA -> IDENTITY: github.kaloyanov5.merkantil.marketdata.controller.Watchl
 MARKETDATA -> IDENTITY: github.kaloyanov5.merkantil.marketdata.model.WatchlistItem depends on github.kaloyanov5.merkantil.identity.model.User
 MARKETDATA -> IDENTITY: github.kaloyanov5.merkantil.marketdata.service.WatchlistService depends on github.kaloyanov5.merkantil.identity.model.User
 MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.scheduler.StockPriceScheduler depends on github.kaloyanov5.merkantil.trading.model.Order
-MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.scheduler.StockPriceScheduler depends on github.kaloyanov5.merkantil.trading.model.enums.Side
 MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.scheduler.StockPriceScheduler depends on github.kaloyanov5.merkantil.trading.repository.OrderRepository
 MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.scheduler.StockPriceScheduler depends on github.kaloyanov5.merkantil.trading.service.OrderService
 MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.service.MassiveWsService depends on github.kaloyanov5.merkantil.trading.model.Order
-MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.service.MassiveWsService depends on github.kaloyanov5.merkantil.trading.model.enums.Side
 MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.service.MassiveWsService depends on github.kaloyanov5.merkantil.trading.repository.OrderRepository
 MARKETDATA -> LEDGER: github.kaloyanov5.merkantil.marketdata.service.MassiveWsService depends on github.kaloyanov5.merkantil.trading.service.OrderService

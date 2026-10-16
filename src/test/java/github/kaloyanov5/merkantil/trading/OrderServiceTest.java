@@ -24,6 +24,7 @@ import github.kaloyanov5.merkantil.identity.model.Role;
 import github.kaloyanov5.merkantil.identity.model.User;
 import github.kaloyanov5.merkantil.marketdata.model.Stock;
 import github.kaloyanov5.merkantil.marketdata.repository.StockRepository;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.marketdata.service.MarketSessionService;
 import github.kaloyanov5.merkantil.marketdata.service.MassiveApiService;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,11 +32,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -59,6 +64,7 @@ class OrderServiceTest {
     @Mock private EmailService emailService;
     @Mock private RateLimiterService rateLimiterService;
     @Mock private MarketSessionService marketSessionService;
+    @Mock private TransactionTemplate transactionTemplate;
 
     @InjectMocks
     private OrderService orderService;
@@ -91,7 +97,25 @@ class OrderServiceTest {
         when(portfolioRepository.save(any(Portfolio.class))).thenAnswer(inv -> inv.getArgument(0));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
         // Default to regular trading hours so MARKET orders pass the session gate
-        when(marketSessionService.getCurrentSession()).thenReturn("OPEN");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.OPEN);
+        // Run the transactional block inline, the way the real template does once it has opened a transaction
+        when(transactionTemplate.execute(any())).thenAnswer(inv -> {
+            TransactionCallback<?> callback = inv.getArgument(0);
+            return callback.doInTransaction(new SimpleTransactionStatus());
+        });
+    }
+
+    private Order openLimitOrder(Side side, String limitPrice) {
+        Order order = new Order();
+        order.setId(50L);
+        order.setUser(user);
+        order.setSymbol("AAPL");
+        order.setType(side);
+        order.setQuantity(10);
+        order.setLimitPrice(new BigDecimal(limitPrice));
+        order.setOrderType(OrderType.LIMIT);
+        order.setStatus(OrderStatus.OPEN);
+        return order;
     }
 
     private OrderRequest marketOrder(String side, int qty) {
@@ -240,7 +264,7 @@ class OrderServiceTest {
     // ---------- VALIDATION ----------
 
     @Test
-    @DisplayName("banned user: rejected before any market call")
+    @DisplayName("banned user: rejected under the user lock, before anything is saved")
     void bannedUser_rejected() {
         user.setBanned(true);
 
@@ -248,7 +272,9 @@ class OrderServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(CommonError.ACCOUNT_SUSPENDED);
 
-        verifyNoInteractions(massiveApiService);
+        verify(orderRepository, never()).save(any());
+        verify(transactionRepository, never()).save(any());
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -274,7 +300,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("market order: rejected when the market is not in regular trading hours")
     void marketOrder_marketClosed_rejected() {
-        when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.CLOSED);
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
                 .isInstanceOf(AppException.class)
@@ -282,16 +308,43 @@ class OrderServiceTest {
 
         verify(orderRepository, never()).save(any());
         verify(massiveApiService, never()).getSnapshot(any());
+        // Rejected before the transaction opens, so the user row is never locked
+        verifyNoInteractions(transactionTemplate);
+        verify(userRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
     @DisplayName("market order: rejected during pre-market with a session-specific message")
     void marketOrder_preMarket_rejected() {
-        when(marketSessionService.getCurrentSession()).thenReturn("PRE_MARKET");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.PRE_MARKET);
 
         assertThatThrownBy(() -> orderService.placeOrder(1L, marketOrder("BUY", 1)))
                 .isInstanceOf(AppException.class)
                 .extracting(t -> ((AppException) t).getErrorCode()).isEqualTo(TradingError.MARKET_CLOSED);
+    }
+
+    @Test
+    @DisplayName("market order: session check and price fetch run before the transaction opens and the user row is locked")
+    void marketOrder_networkCallsHappenBeforeLock() {
+        stubMarketPrice(150.0);
+        when(portfolioRepository.findByUserIdAndSymbolForUpdate(1L, "AAPL")).thenReturn(Optional.empty());
+
+        orderService.placeOrder(1L, marketOrder("BUY", 1));
+
+        InOrder inOrder = inOrder(marketSessionService, massiveApiService, transactionTemplate, userRepository);
+        inOrder.verify(marketSessionService).getCurrentSession();
+        inOrder.verify(massiveApiService).getSnapshot("AAPL");
+        inOrder.verify(transactionTemplate).execute(any());
+        inOrder.verify(userRepository).findByIdForUpdate(1L);
+    }
+
+    @Test
+    @DisplayName("limit order: makes no Massive calls at all")
+    void limitOrder_makesNoNetworkCalls() {
+        orderService.placeOrder(1L, limitOrder("BUY", 10, 140.0));
+
+        verifyNoInteractions(massiveApiService);
+        verify(marketSessionService, never()).getCurrentSession();
     }
 
     // ---------- LIMIT ORDERS ----------
@@ -311,7 +364,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("LIMIT order: still accepted when the market is closed")
     void limitOrder_marketClosed_stillAllowed() {
-        when(marketSessionService.getCurrentSession()).thenReturn("CLOSED");
+        when(marketSessionService.getCurrentSession()).thenReturn(MarketSession.CLOSED);
 
         OrderResponse response = orderService.placeOrder(1L, limitOrder("BUY", 10, 140.0));
 
@@ -445,5 +498,49 @@ class OrderServiceTest {
         assertThat(user.getBalance()).isEqualByComparingTo("8700.00");
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
         assertThat(order.getAtPrice()).isEqualByComparingTo("130.00");
+    }
+
+    // The fill guard lives inside executeLimitOrder, so it holds even if a caller
+    // hands over a price that does not meet the limit.
+
+    @Test
+    @DisplayName("executeLimitOrder BUY: a price above the limit does not fill")
+    void executeLimitOrder_buyAboveLimit_doesNotFill() {
+        Order order = openLimitOrder(Side.BUY, "140.00");
+        when(orderRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(order));
+
+        orderService.executeLimitOrder(50L, new BigDecimal("140.01"));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.OPEN);
+        verify(userRepository, never()).findByIdForUpdate(any());
+        verify(orderRepository, never()).save(any());
+        verifyNoInteractions(transactionRepository, portfolioRepository, emailService);
+    }
+
+    @Test
+    @DisplayName("executeLimitOrder SELL: a price below the limit does not fill")
+    void executeLimitOrder_sellBelowLimit_doesNotFill() {
+        Order order = openLimitOrder(Side.SELL, "140.00");
+        when(orderRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(order));
+
+        orderService.executeLimitOrder(50L, new BigDecimal("139.99"));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.OPEN);
+        verify(userRepository, never()).findByIdForUpdate(any());
+        verify(orderRepository, never()).save(any());
+        verifyNoInteractions(transactionRepository, portfolioRepository, emailService);
+    }
+
+    @Test
+    @DisplayName("executeLimitOrder: a null price does not fill")
+    void executeLimitOrder_nullPrice_doesNotFill() {
+        Order order = openLimitOrder(Side.BUY, "140.00");
+        when(orderRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(order));
+
+        orderService.executeLimitOrder(50L, null);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.OPEN);
+        verify(userRepository, never()).findByIdForUpdate(any());
+        verify(orderRepository, never()).save(any());
     }
 }

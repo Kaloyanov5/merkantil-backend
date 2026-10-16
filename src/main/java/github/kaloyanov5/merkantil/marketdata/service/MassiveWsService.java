@@ -2,8 +2,8 @@ package github.kaloyanov5.merkantil.marketdata.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
 import github.kaloyanov5.merkantil.trading.model.Order;
-import github.kaloyanov5.merkantil.trading.model.enums.Side;
 import github.kaloyanov5.merkantil.marketdata.model.Stock;
 import github.kaloyanov5.merkantil.trading.repository.OrderRepository;
 import github.kaloyanov5.merkantil.marketdata.repository.StockRepository;
@@ -318,10 +318,10 @@ public class MassiveWsService {
             return false;
         }
 
-        String session = marketSessionService.getCurrentSession();
+        MarketSession session = marketSessionService.getCurrentSession();
         boolean updated = false;
 
-        if ("OPEN".equals(session)) {
+        if (MarketSession.OPEN.equals(session)) {
             if (close != null) {
                 stock.setCurrentPrice(MoneyUtil.of(close));
                 stock.setExtendedHoursPrice(null);
@@ -342,7 +342,7 @@ public class MassiveWsService {
             if (accumVolume != null) {
                 stock.setVolume(accumVolume);
             }
-        } else if ("PRE_MARKET".equals(session) || "AFTER_HOURS".equals(session)) {
+        } else if (MarketSession.EXTENDED_HOURS.contains(session)) {
             if (close != null) {
                 stock.setExtendedHoursPrice(MoneyUtil.of(close));
                 updated = true;
@@ -396,10 +396,8 @@ public class MassiveWsService {
         for (Order order : openOrders) {
             try {
                 if (order.getLimitPrice() == null) continue;
-                boolean met = order.getType() == Side.BUY
-                        ? currentPrice.compareTo(order.getLimitPrice()) <= 0
-                        : currentPrice.compareTo(order.getLimitPrice()) >= 0;
-                if (met) {
+
+                if (order.isFillableAt(currentPrice)) {
                     orderService.executeLimitOrder(order.getId(), currentPrice);
                 }
             } catch (Exception e) {

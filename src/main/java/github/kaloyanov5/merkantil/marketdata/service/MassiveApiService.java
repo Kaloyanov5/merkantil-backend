@@ -2,6 +2,8 @@ package github.kaloyanov5.merkantil.marketdata.service;
 
 import github.kaloyanov5.merkantil.common.logging.LogSanitizer;
 import github.kaloyanov5.merkantil.marketdata.controller.dto.massive.*;
+import github.kaloyanov5.merkantil.common.constants.MarketSession;
+import github.kaloyanov5.merkantil.marketdata.controller.dto.response.MarketStatusResponse;
 import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -384,7 +386,7 @@ public class MassiveApiService {
     /**
      * Get detailed market status: OPEN, PRE_MARKET, AFTER_HOURS, or CLOSED.
      */
-    public Map<String, String> getDetailedMarketStatus() {
+    public MarketStatusResponse getDetailedMarketStatus() {
         try {
             MassiveMarketStatusResponse response = client.get()
                     .uri(uriBuilder -> uriBuilder
@@ -396,10 +398,10 @@ public class MassiveApiService {
                     .block();
 
             if (response == null) {
-                return Map.of("status", "CLOSED");
+                return new MarketStatusResponse(MarketSession.CLOSED, "");
             }
 
-            String status;
+            MarketSession status;
 
             // Check if main exchanges are open
             boolean exchangesOpen = false;
@@ -410,22 +412,22 @@ public class MassiveApiService {
             }
 
             if (exchangesOpen || "open".equalsIgnoreCase(response.market())) {
-                status = "OPEN";
+                status = MarketSession.OPEN;
             } else if (response.earlyHours() != null && response.earlyHours()) {
-                status = "PRE_MARKET";
+                status = MarketSession.PRE_MARKET;
             } else if (response.afterHours() != null && response.afterHours()) {
-                status = "AFTER_HOURS";
+                status = MarketSession.AFTER_HOURS;
             } else {
-                status = "CLOSED";
+                status = MarketSession.CLOSED;
             }
 
-            return Map.of(
-                    "status", status,
-                    "serverTime", response.serverTime() != null ? response.serverTime() : ""
+            return new MarketStatusResponse(
+                    status,
+                    response.serverTime() != null ? response.serverTime() : ""
             );
         } catch (Exception e) {
             log.error("Error checking detailed market status: {}", e.getMessage());
-            return Map.of("status", "CLOSED");
+            return new MarketStatusResponse(MarketSession.CLOSED, "");
         }
     }
 

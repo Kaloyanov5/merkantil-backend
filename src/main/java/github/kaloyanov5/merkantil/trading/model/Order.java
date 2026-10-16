@@ -71,4 +71,10 @@ public class Order {
     @Version
     @Column(nullable = false)
     private Long version;
+
+    public boolean isFillableAt(BigDecimal price) {
+        return type == Side.BUY
+                ? price.compareTo(limitPrice) <= 0
+                : price.compareTo(limitPrice) >= 0;
+    }
 }
